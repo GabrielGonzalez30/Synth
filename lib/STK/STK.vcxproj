@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{A46D0C98-9361-47B8-9F25-D6F40087E602}</ProjectGuid>
+    <RootNamespace>STK</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v141</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v141</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v141</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v141</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>__LITTLE_ENDIAN__;__WINDOWS_DS__;__WINDOWS__MM__</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>__LITTLE_ENDIAN__;__WINDOWS_DS__;__WINDOWS__MM__</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>__LITTLE_ENDIAN__;__WINDOWS_DS__;__WINDOWS__MM__</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>__LITTLE_ENDIAN__;__WINDOWS_DS__;__WINDOWS__MM__</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\ADSR.cpp" />
+    <ClCompile Include="src\Asymp.cpp" />
+    <ClCompile Include="src\BandedWG.cpp" />
+    <ClCompile Include="src\BeeThree.cpp" />
+    <ClCompile Include="src\BiQuad.cpp" />
+    <ClCompile Include="src\Blit.cpp" />
+    <ClCompile Include="src\BlitSaw.cpp" />
+    <ClCompile Include="src\BlitSquare.cpp" />
+    <ClCompile Include="src\BlowBotl.cpp" />
+    <ClCompile Include="src\BlowHole.cpp" />
+    <ClCompile Include="src\Bowed.cpp" />
+    <ClCompile Include="src\Brass.cpp" />
+    <ClCompile Include="src\Chorus.cpp" />
+    <ClCompile Include="src\Clarinet.cpp" />
+    <ClCompile Include="src\Delay.cpp" />
+    <ClCompile Include="src\DelayA.cpp" />
+    <ClCompile Include="src\DelayL.cpp" />
+    <ClCompile Include="src\Drummer.cpp" />
+    <ClCompile Include="src\Echo.cpp" />
+    <ClCompile Include="src\Envelope.cpp" />
+    <ClCompile Include="src\FileLoop.cpp" />
+    <ClCompile Include="src\FileRead.cpp" />
+    <ClCompile Include="src\FileWrite.cpp" />
+    <ClCompile Include="src\FileWvIn.cpp" />
+    <ClCompile Include="src\FileWvOut.cpp" />
+    <ClCompile Include="src\Fir.cpp" />
+    <ClCompile Include="src\Flute.cpp" />
+    <ClCompile Include="src\FM.cpp" />
+    <ClCompile Include="src\FMVoices.cpp" />
+    <ClCompile Include="src\FormSwep.cpp" />
+    <ClCompile Include="src\FreeVerb.cpp" />
+    <ClCompile Include="src\Granulate.cpp" />
+    <ClCompile Include="src\Guitar.cpp" />
+    <ClCompile Include="src\HevyMetl.cpp" />
+    <ClCompile Include="src\Iir.cpp" />
+    <ClCompile Include="src\include\asio.cpp" />
+    <ClCompile Include="src\include\asiodrivers.cpp" />
+    <ClCompile Include="src\include\asiolist.cpp" />
+    <ClCompile Include="src\include\iasiothiscallresolver.cpp" />
+    <ClCompile Include="src\InetWvIn.cpp" />
+    <ClCompile Include="src\InetWvOut.cpp" />
+    <ClCompile Include="src\JCRev.cpp" />
+    <ClCompile Include="src\LentPitShift.cpp" />
+    <ClCompile Include="src\Mandolin.cpp" />
+    <ClCompile Include="src\Mesh2D.cpp" />
+    <ClCompile Include="src\Messager.cpp" />
+    <ClCompile Include="src\MidiFileIn.cpp" />
+    <ClCompile Include="src\Modal.cpp" />
+    <ClCompile Include="src\ModalBar.cpp" />
+    <ClCompile Include="src\Modulate.cpp" />
+    <ClCompile Include="src\Moog.cpp" />
+    <ClCompile Include="src\Mutex.cpp" />
+    <ClCompile Include="src\Noise.cpp" />
+    <ClCompile Include="src\NRev.cpp" />
+    <ClCompile Include="src\OnePole.cpp" />
+    <ClCompile Include="src\OneZero.cpp" />
+    <ClCompile Include="src\PercFlut.cpp" />
+    <ClCompile Include="src\Phonemes.cpp" />
+    <ClCompile Include="src\PitShift.cpp" />
+    <ClCompile Include="src\Plucked.cpp" />
+    <ClCompile Include="src\PoleZero.cpp" />
+    <ClCompile Include="src\PRCRev.cpp" />
+    <ClCompile Include="src\Resonate.cpp" />
+    <ClCompile Include="src\Rhodey.cpp" />
+    <ClCompile Include="src\RtAudio.cpp" />
+    <ClCompile Include="src\RtMidi.cpp" />
+    <ClCompile Include="src\RtWvIn.cpp" />
+    <ClCompile Include="src\RtWvOut.cpp" />
+    <ClCompile Include="src\Sampler.cpp" />
+    <ClCompile Include="src\Saxofony.cpp" />
+    <ClCompile Include="src\Shakers.cpp" />
+    <ClCompile Include="src\Simple.cpp" />
+    <ClCompile Include="src\SineWave.cpp" />
+    <ClCompile Include="src\SingWave.cpp" />
+    <ClCompile Include="src\Sitar.cpp" />
+    <ClCompile Include="src\Skini.cpp" />
+    <ClCompile Include="src\Socket.cpp" />
+    <ClCompile Include="src\Sphere.cpp" />
+    <ClCompile Include="src\StifKarp.cpp" />
+    <ClCompile Include="src\Stk.cpp" />
+    <ClCompile Include="src\TapDelay.cpp" />
+    <ClCompile Include="src\TcpClient.cpp" />
+    <ClCompile Include="src\TcpServer.cpp" />
+    <ClCompile Include="src\Thread.cpp" />
+    <ClCompile Include="src\TubeBell.cpp" />
+    <ClCompile Include="src\Twang.cpp" />
+    <ClCompile Include="src\TwoPole.cpp" />
+    <ClCompile Include="src\TwoZero.cpp" />
+    <ClCompile Include="src\UdpSocket.cpp" />
+    <ClCompile Include="src\Voicer.cpp" />
+    <ClCompile Include="src\VoicForm.cpp" />
+    <ClCompile Include="src\Whistle.cpp" />
+    <ClCompile Include="src\Wurley.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\ADSR.h" />
+    <ClInclude Include="src\Asymp.h" />
+    <ClInclude Include="src\BandedWG.h" />
+    <ClInclude Include="src\BeeThree.h" />
+    <ClInclude Include="src\BiQuad.h" />
+    <ClInclude Include="src\Blit.h" />
+    <ClInclude Include="src\BlitSaw.h" />
+    <ClInclude Include="src\BlitSquare.h" />
+    <ClInclude Include="src\BlowBotl.h" />
+    <ClInclude Include="src\BlowHole.h" />
+    <ClInclude Include="src\Bowed.h" />
+    <ClInclude Include="src\BowTable.h" />
+    <ClInclude Include="src\Brass.h" />
+    <ClInclude Include="src\Chorus.h" />
+    <ClInclude Include="src\Clarinet.h" />
+    <ClInclude Include="src\Cubic.h" />
+    <ClInclude Include="src\Delay.h" />
+    <ClInclude Include="src\DelayA.h" />
+    <ClInclude Include="src\DelayL.h" />
+    <ClInclude Include="src\Drummer.h" />
+    <ClInclude Include="src\Echo.h" />
+    <ClInclude Include="src\Effect.h" />
+    <ClInclude Include="src\Envelope.h" />
+    <ClInclude Include="src\FileLoop.h" />
+    <ClInclude Include="src\FileRead.h" />
+    <ClInclude Include="src\FileWrite.h" />
+    <ClInclude Include="src\FileWvIn.h" />
+    <ClInclude Include="src\FileWvOut.h" />
+    <ClInclude Include="src\Filter.h" />
+    <ClInclude Include="src\Fir.h" />
+    <ClInclude Include="src\Flute.h" />
+    <ClInclude Include="src\FM.h" />
+    <ClInclude Include="src\FMVoices.h" />
+    <ClInclude Include="src\FormSwep.h" />
+    <ClInclude Include="src\FreeVerb.h" />
+    <ClInclude Include="src\Function.h" />
+    <ClInclude Include="src\Generator.h" />
+    <ClInclude Include="src\Granulate.h" />
+    <ClInclude Include="src\Guitar.h" />
+    <ClInclude Include="src\HevyMetl.h" />
+    <ClInclude Include="src\Iir.h" />
+    <ClInclude Include="src\include\asio.h" />
+    <ClInclude Include="src\include\asiodrivers.h" />
+    <ClInclude Include="src\include\asiodrvr.h" />
+    <ClInclude Include="src\include\asiolist.h" />
+    <ClInclude Include="src\include\asiosys.h" />
+    <ClInclude Include="src\include\dsound.h" />
+    <ClInclude Include="src\include\FunctionDiscoveryKeys_devpkey.h" />
+    <ClInclude Include="src\include\ginclude.h" />
+    <ClInclude Include="src\include\iasiodrv.h" />
+    <ClInclude Include="src\include\iasiothiscallresolver.h" />
+    <ClInclude Include="src\include\soundcard.h" />
+    <ClInclude Include="src\InetWvIn.h" />
+    <ClInclude Include="src\InetWvOut.h" />
+    <ClInclude Include="src\Instrmnt.h" />
+    <ClInclude Include="src\JCRev.h" />
+    <ClInclude Include="src\JetTable.h" />
+    <ClInclude Include="src\LentPitShift.h" />
+    <ClInclude Include="src\Mandolin.h" />
+    <ClInclude Include="src\Mesh2D.h" />
+    <ClInclude Include="src\Messager.h" />
+    <ClInclude Include="src\MidiFileIn.h" />
+    <ClInclude Include="src\Modal.h" />
+    <ClInclude Include="src\ModalBar.h" />
+    <ClInclude Include="src\Modulate.h" />
+    <ClInclude Include="src\Moog.h" />
+    <ClInclude Include="src\Mutex.h" />
+    <ClInclude Include="src\Noise.h" />
+    <ClInclude Include="src\NRev.h" />
+    <ClInclude Include="src\OnePole.h" />
+    <ClInclude Include="src\OneZero.h" />
+    <ClInclude Include="src\PercFlut.h" />
+    <ClInclude Include="src\Phonemes.h" />
+    <ClInclude Include="src\PitShift.h" />
+    <ClInclude Include="src\Plucked.h" />
+    <ClInclude Include="src\PoleZero.h" />
+    <ClInclude Include="src\PRCRev.h" />
+    <ClInclude Include="src\ReedTable.h" />
+    <ClInclude Include="src\Resonate.h" />
+    <ClInclude Include="src\Rhodey.h" />
+    <ClInclude Include="src\RtAudio.h" />
+    <ClInclude Include="src\RtMidi.h" />
+    <ClInclude Include="src\RtWvIn.h" />
+    <ClInclude Include="src\RtWvOut.h" />
+    <ClInclude Include="src\Sampler.h" />
+    <ClInclude Include="src\Saxofony.h" />
+    <ClInclude Include="src\Shakers.h" />
+    <ClInclude Include="src\Simple.h" />
+    <ClInclude Include="src\SineWave.h" />
+    <ClInclude Include="src\SingWave.h" />
+    <ClInclude Include="src\Sitar.h" />
+    <ClInclude Include="src\Skini.h" />
+    <ClInclude Include="src\SKINImsg.h" />
+    <ClInclude Include="src\SKINItbl.h" />
+    <ClInclude Include="src\Socket.h" />
+    <ClInclude Include="src\Sphere.h" />
+    <ClInclude Include="src\StifKarp.h" />
+    <ClInclude Include="src\Stk.h" />
+    <ClInclude Include="src\TapDelay.h" />
+    <ClInclude Include="src\TcpClient.h" />
+    <ClInclude Include="src\TcpServer.h" />
+    <ClInclude Include="src\Thread.h" />
+    <ClInclude Include="src\TubeBell.h" />
+    <ClInclude Include="src\Twang.h" />
+    <ClInclude Include="src\TwoPole.h" />
+    <ClInclude Include="src\TwoZero.h" />
+    <ClInclude Include="src\UdpSocket.h" />
+    <ClInclude Include="src\Vector3D.h" />
+    <ClInclude Include="src\Voicer.h" />
+    <ClInclude Include="src\VoicForm.h" />
+    <ClInclude Include="src\Whistle.h" />
+    <ClInclude Include="src\Wurley.h" />
+    <ClInclude Include="src\WvIn.h" />
+    <ClInclude Include="src\WvOut.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="LICENSE" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
