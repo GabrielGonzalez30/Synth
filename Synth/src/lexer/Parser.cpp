@@ -9,6 +9,7 @@ namespace Synth {
 		//check if lexer can recognize the tokens
 		if (!ph.init(string)) { return false; }
 		
+		
 	}
 
 }

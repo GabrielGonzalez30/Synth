@@ -146,6 +146,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\lexer\Lexer.cpp" />
+    <ClCompile Include="src\lexer\Parser.cpp" />
     <ClCompile Include="src\Synth.cpp" />
   </ItemGroup>
   <ItemGroup>
