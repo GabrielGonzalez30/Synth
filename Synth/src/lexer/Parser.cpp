@@ -50,9 +50,51 @@ namespace Synth {
 			ph.advance_token(ph.e_advance);
 			//define modification grammar
 		}
+
+		//General Function Check
 		else if (ph.token_is(token::e_symbol, ph.e_hold)) { //GENERAL STATEMENT
+			pr->function = ph.current_token().value;
 			ph.advance_token(ph.e_advance);
-			//define general statement grammar
+
+			//LeftPar Check
+			if (!ph.token_is(token::e_lbracket)) {
+				pr->error = true;
+				return pr;
+			}
+
+			//Has Param Check
+			if (!ph.token_is(token::e_rbracket)) {
+				if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
+					pr->error = true;
+					return pr;
+				}
+
+				//Extra Params Check
+				while (!ph.peek_token_is(token::e_rbracket) &&
+					!ph.lexer().finished()) {
+					if (!ph.token_is(token::e_comma)) {
+						pr->error = true;
+						return pr;
+					}
+					if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
+						pr->error = true;
+						return pr;
+					}
+				}
+
+				if (!ph.token_is(token::e_rbracket)) {
+					pr->error = true;
+					return pr;
+				}
+			}
+
+			//End Check
+			if (!(ph.lexer().finished()) ||
+				!(ph.current_token().value == "")) {
+				pr->error = true;
+				return pr;
+			}
+
 		}
 		else { //error
 			pr->error = true;
