@@ -104,8 +104,9 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)lib\STK\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)lib\lexertk;$(SolutionDir)lib\STK\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>__LITTLE_ENDIAN__;__WINDOWS_DS__;__WINDOWS_MM__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/std:c++17 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>dsound.lib;winmm.lib;Wsock32.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -146,12 +147,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Audio.cpp" />
+    <ClCompile Include="src\lexer\Parser.cpp" />
+    <ClCompile Include="src\streams\AudioFileStream.cpp" />
+    <ClCompile Include="src\streams\AudioInputStream.cpp" />
+    <ClCompile Include="src\streams\Stream.cpp" />
+    <ClCompile Include="src\streams\SynthesizerStream.cpp" />
     <ClCompile Include="src\Synth.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\lib\STK\STK.vcxproj">
       <Project>{a46d0c98-9361-47b8-9f25-d6f40087e602}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\lib\lexertk\lexertk.h" />
+    <ClInclude Include="src\lexer\Parser.h" />
+    <ClInclude Include="src\streams\AudioFileStream.h" />
+    <ClInclude Include="src\streams\AudioInputStream.h" />
+    <ClInclude Include="src\streams\Stream.h" />
+    <ClInclude Include="src\streams\SynthesizerStream.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
