@@ -147,9 +147,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\Audio.cpp" />
     <ClCompile Include="src\lexer\Parser.cpp" />
+    <ClCompile Include="src\streams\AudioFileStream.cpp" />
+    <ClCompile Include="src\streams\AudioInputStream.cpp" />
+    <ClCompile Include="src\streams\Stream.cpp" />
+    <ClCompile Include="src\streams\SynthesizerStream.cpp" />
     <ClCompile Include="src\Synth.cpp" />
-    <ClCompile Include="SyntheziserStream.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\lib\STK\STK.vcxproj">
@@ -157,7 +161,12 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="SyntheziserStream.h" />
+    <ClInclude Include="..\lib\lexertk\lexertk.h" />
+    <ClInclude Include="src\lexer\Parser.h" />
+    <ClInclude Include="src\streams\AudioFileStream.h" />
+    <ClInclude Include="src\streams\AudioInputStream.h" />
+    <ClInclude Include="src\streams\Stream.h" />
+    <ClInclude Include="src\streams\SynthesizerStream.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
