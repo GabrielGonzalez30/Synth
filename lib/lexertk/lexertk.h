@@ -1700,6 +1700,12 @@ namespace lexertk
 		typedef token         token_t;
 		typedef generator generator_t;
 
+		inline void clear() 
+		{
+			lexer_.clear();
+			current_token_.clear();
+		}
+
 		inline bool init(const std::string& str)
 		{
 			if (!lexer_.process(str))

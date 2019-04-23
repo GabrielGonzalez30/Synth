@@ -3,150 +3,143 @@
 
 namespace Synth {
 
-	ParsedResult::ParsedResult() : params(new vector<string>()) { }
+	ParsedResult::ParsedResult() : params(new vector<string>()), error(0) { }
 
 	ParsedResult::~ParsedResult() {
 		delete params;
 	}
 
-
 	//processes one line of Synth code
 	ParsedResult* Parser::process(string& string) {
-		parser_helper ph;
-		ParsedResult* pr = new ParsedResult();
+		
+		current_result = new ParsedResult();
 
 		//check if the lexer tokenized well
-		if (!ph.init(string)) { pr->error = true; return pr; }
+		if (!ph.init(string)) { current_result->error = true; return current_result; }
+		current_string = string;
 		
+		int error;
 		//check the first token
 		if (ph.token_is(token::e_symbol, "InitStream", ph.e_hold)) { //INITSTREAM
-			pr->function = pr->typeOfStatement = ph.current_token().value;
-			ph.advance_token(ph.e_advance);
-
-			if (!ph.token_is_then_assign(token::e_symbol, pr->ID)) {
-				pr->error = true; 
-				return pr;
-			}
-
-			if (!ph.token_is(token::e_symbol, "as")) {
-				pr->error = true;
-				return pr;
-			}
-
-			if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
-				pr->error = true;
-				return pr;
-			}
-		
-			//check if there are more tokens in the lexer
-			if (!(ph.lexer().finished()) || 
-				!(ph.current_token().value == "")) {
-				pr->error = true;
-				return pr;
-			}
-	
+			error = processInitStream();
 		}
 		else if (ph.token_is(token::e_symbol, "As", ph.e_hold)) { //MODIFICATION
-
-			
-			if (!ph.token_is_then_assign(token::e_symbol, pr->ID)) { // checking streamID
-				pr->error = true;
-				return pr;
-			}
-
-
-			if (!ph.token_is_then_assign(token::e_symbol, pr->function)) { // checking functions
-				pr->error = true;
-				return pr;
-			}
-
-
-			if (!ph.token_is(token::e_lbracket)) { // checking left bracket
-				pr->error = true;
-				return pr;
-			}
-
-			if (!ph.token_is(token::e_rbracket)) { // has correct parameters check
-				if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
-					pr->error = true;
-					return pr;
-				}
-
-				// checking any additional parameters
-				while (!ph.peek_token_is(token::e_rbracket) &&
-					!ph.lexer().finished()) {
-					if (!ph.token_is(token::e_comma) || (!ph.token_is(token::e_number)) || !ph.token_is_then_assign(token::e_symbol, *pr->params)) {
-						pr->error = true;
-						return pr;
-					}
-				}
-
-				if (!ph.token_is(token::e_rbracket)) { 
-					pr->error = true;
-					return pr;
-				}
-			}
-
-			if (!(ph.lexer().finished()) ||
-				!(ph.current_token().value == "")) { // check ends
-				pr->error = true;
-				return pr;
-			}
-
+			error = processModification();
 		}
-
 		//General Function Check
 		else if (ph.token_is(token::e_symbol, ph.e_hold)) { //GENERAL STATEMENT
-			pr->function = ph.current_token().value;
-			ph.advance_token(ph.e_advance);
-
-			//LeftPar Check
-			if (!ph.token_is(token::e_lbracket)) {
-				pr->error = true;
-				return pr;
-			}
-
-			//Has Param Check
-			if (!ph.token_is(token::e_rbracket)) {
-				if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
-					pr->error = true;
-					return pr;
-				}
-
-				//Extra Params Check
-				while (!ph.peek_token_is(token::e_rbracket) &&
-					!ph.lexer().finished()) {
-					if (!ph.token_is(token::e_comma)) {
-						pr->error = true;
-						return pr;
-					}
-					if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
-						pr->error = true;
-						return pr;
-					}
-				}
-
-				//RightPar Check
-				if (!ph.token_is(token::e_rbracket)) {
-					pr->error = true;
-					return pr;
-				}
-			}
-
-			//End Check
-			if (!(ph.lexer().finished()) ||
-				!(ph.current_token().value == "")) {
-				pr->error = true;
-				return pr;
-			}
-
+			error = processGeneralStatement();
 		}
 		else { //error
-			pr->error = true;
+			error = syntaxError;
 		}
 
-		pr->error = false;
-		return pr;
+		ph.clear();
+		current_result->error = error;
+		return current_result;
+	}
+
+	int Parser::processInitStream() {
+		current_result->function = current_result->typeOfStatement = ph.current_token().value;
+		ph.advance_token(ph.e_advance);
+
+		if (!ph.token_is_then_assign(token::e_symbol, current_result->ID)) {
+			return syntaxError;
+		}
+
+		if (!ph.token_is(token::e_symbol, "as")) {
+			return syntaxError;
+		}
+
+		if (!ph.token_is_then_assign(token::e_symbol, *(current_result->params))) {
+			return paramsError;
+		}
+
+		//check if there are more tokens in the lexer
+		if (!(ph.lexer().finished()) ||
+			!(ph.current_token().value == "")) {
+			return syntaxError;
+		}
+
+		return none;
+	}
+
+	int Parser::processModification() {
+		current_result->typeOfStatement = "Modification";
+		ph.advance_token(ph.e_advance);
+
+		if (!ph.token_is_then_assign(token::e_symbol, current_result->ID)) { // checking streamID
+			return syntaxError;
+		}
+
+		if (!ph.token_is_then_assign(token::e_symbol, current_result->function)) { // checking functions
+			return syntaxError;
+		}
+
+
+		if (!ph.token_is(token::e_lbracket)) { // checking left bracket
+			return syntaxError;
+		}
+
+		while (!(ph.lexer().finished())) {
+
+			if (!(ph.token_is_then_assign(token::e_number, *current_result->params) ||
+				ph.token_is_then_assign(token::e_symbol, *current_result->params))) {
+				return paramsError;
+			}
+			
+			if (ph.token_is(token::e_rbracket)) {
+				break;
+			}
+
+			if (!ph.token_is(token::e_comma)) {
+				return syntaxError;
+			}
+				
+		}
+
+		if (!(ph.lexer().finished()) ||
+			!(ph.current_token().value == "")) { // check ends
+			return syntaxError;
+		}
+
+		return none;
+	}
+
+	int Parser::processGeneralStatement() {
+		current_result->function = ph.current_token().value;
+		ph.advance_token(ph.e_advance);
+
+		//LeftPar Check
+		if (!ph.token_is(token::e_lbracket)) {
+			return syntaxError;
+		}
+
+		//Has Param Check
+		while (!(ph.lexer().finished())) {
+
+			if (!(ph.token_is_then_assign(token::e_number, *current_result->params) ||
+				ph.token_is_then_assign(token::e_symbol, *current_result->params))) {
+				return paramsError;
+			}
+
+			if (ph.token_is(token::e_rbracket)) {
+				break;
+			}
+
+			if (!ph.token_is(token::e_comma)) {
+				return syntaxError;
+			}
+
+		}
+
+		//End Check
+		if (!(ph.lexer().finished()) ||
+			!(ph.current_token().value == "")) {
+			return syntaxError;
+		}
+
+		return none;
 	}
 
 }
