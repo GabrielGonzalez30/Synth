@@ -9,4 +9,8 @@ namespace Synth {
 	AudioInputStream::~AudioInputStream()
 	{
 	}
+
+	float AudioInputStream::tick() {
+		return 0.0;
+	}
 }

@@ -1,14 +1,7 @@
 #include "Stream.h"
 
 namespace Synth {
-
-	Stream::Stream()
-	{
+	float Stream::tick() {
+		return 0.0;
 	}
-
-
-	Stream::~Stream()
-	{
-	}
-
 }

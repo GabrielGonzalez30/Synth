@@ -7,6 +7,7 @@ namespace Synth {
 	public:
 		AudioFileStream();
 		~AudioFileStream();
+		virtual float tick();
 	};
 }
 
