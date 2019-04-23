@@ -75,7 +75,7 @@ namespace Synth {
 				// checking any additional parameters
 				while (!ph.peek_token_is(token::e_rbracket) &&
 					!ph.lexer().finished()) {
-					if (!ph.token_is(token::e_comma) || !ph.token_is_then_assign(token::e_symbol, *pr->params)) {
+					if (!ph.token_is(token::e_comma) || (!ph.token_is(token::e_number)) || !ph.token_is_then_assign(token::e_symbol, *pr->params)) {
 						pr->error = true;
 						return pr;
 					}
