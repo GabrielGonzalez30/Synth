@@ -47,8 +47,52 @@ namespace Synth {
 	
 		}
 		else if (ph.token_is(token::e_symbol, "As", ph.e_hold)) { //MODIFICATION
-			ph.advance_token(ph.e_advance);
-			//define modification grammar
+
+			
+			if (!ph.token_is_then_assign(token::e_symbol, pr->ID)) { // checking streamID
+				pr->error = true;
+				return pr;
+			}
+
+
+			if (!ph.token_is_then_assign(token::e_symbol, pr->function)) { // checking functions
+				pr->error = true;
+				return pr;
+			}
+
+
+			if (!ph.token_is(token::e_lbracket)) { // checking left bracket
+				pr->error = true;
+				return pr;
+			}
+
+			if (!ph.token_is(token::e_rbracket)) { // has correct parameters check
+				if (!ph.token_is_then_assign(token::e_symbol, *pr->params)) {
+					pr->error = true;
+					return pr;
+				}
+
+				// checking any additional parameters
+				while (!ph.peek_token_is(token::e_rbracket) &&
+					!ph.lexer().finished()) {
+					if (!ph.token_is(token::e_comma) || !ph.token_is_then_assign(token::e_symbol, *pr->params)) {
+						pr->error = true;
+						return pr;
+					}
+				}
+
+				if (!ph.token_is(token::e_rbracket)) { 
+					pr->error = true;
+					return pr;
+				}
+			}
+
+			if (!(ph.lexer().finished()) ||
+				!(ph.current_token().value == "")) { // check ends
+				pr->error = true;
+				return pr;
+			}
+
 		}
 
 		//General Function Check
@@ -82,6 +126,7 @@ namespace Synth {
 					}
 				}
 
+				//RightPar Check
 				if (!ph.token_is(token::e_rbracket)) {
 					pr->error = true;
 					return pr;
