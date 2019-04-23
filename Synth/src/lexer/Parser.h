@@ -34,6 +34,8 @@ namespace Synth {
 	*/
 
 	struct ParsedResult {
+		ParsedResult();
+		~ParsedResult();
 		string typeOfStatement;
 		string function;
 		string ID;
@@ -46,9 +48,6 @@ namespace Synth {
 	public:
 		//processes one line of Synth code
 		ParsedResult* process(string& string);
-
-	private:
-		bool processAssign();
-		bool processStatement();
+	
 	};
 }
