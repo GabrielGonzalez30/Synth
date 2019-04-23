@@ -22,4 +22,16 @@ int main() {
 
 	Synth::Synth s;
 
+	while (1) {
+		//get the next line
+
+		//parse the line
+
+		//check what function does it need to do
+
+		//execute function
+
+		//free parsed result
+	}
+
 }

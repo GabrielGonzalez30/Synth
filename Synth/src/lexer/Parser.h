@@ -2,6 +2,7 @@
 
 #include "lexertk.h"
 #include <string>
+#include <vector>
 
 using namespace std;
 using namespace lexertk;
@@ -11,7 +12,10 @@ namespace Synth {
 	/*
 		*Define the grammar
 		InitializeStream: InitStream [streamID] as [Type]
-		StreamModification: [streamID] [Function]([Parameters]) 
+
+		InputAudio, AudioFile, Synthesizer
+
+		StreamModification: As [streamID] [Function]([Parameters]) 
 		GeneralStatement: [Function]([Parameters])
 
 		**Stream Modifier Functions**
@@ -24,21 +28,27 @@ namespace Synth {
 		saveOnRecord:
 		....etc....
 
-
+		alskjdflfajskd(1, 2, 3)
 
 
 	*/
+
+	struct ParsedResult {
+		string typeOfStatement;
+		string function;
+		string ID;
+		vector<string>* params;
+		bool error; //true if error
+	};
 
 	class Parser {
 
 	public:
 		//processes one line of Synth code
-		bool process(string& string);
+		ParsedResult* process(string& string);
 
 	private:
 		bool processAssign();
 		bool processStatement();
-
-
 	};
 }
