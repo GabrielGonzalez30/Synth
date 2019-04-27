@@ -12,7 +12,7 @@ namespace Synth {
 	struct ParsedResult {
 		ParsedResult();
 		~ParsedResult();
-		string typeOfStatement;
+		int typeOfStatement;
 		string function;
 		string ID;
 		vector<string>* params;
@@ -25,9 +25,12 @@ namespace Synth {
 		//processes one line of Synth code
 		ParsedResult* process(string& string);
 
-		enum ParserError
-		{
+		enum ParserError {
 			none = 0, syntaxError, paramsError, //TODO
+		};
+
+		enum TypeOfStatement {
+			InitStream, Modification, GeneralStatement,
 		};
 
 	private:

@@ -40,7 +40,9 @@ namespace Synth {
 	}
 
 	int Parser::processInitStream() {
-		current_result->function = current_result->typeOfStatement = ph.current_token().value;
+		current_result->function = ph.current_token().value;
+		current_result->typeOfStatement = InitStream;
+
 		ph.advance_token(ph.e_advance);
 
 		if (!ph.token_is_then_assign(token::e_symbol, current_result->ID)) {
@@ -65,7 +67,7 @@ namespace Synth {
 	}
 
 	int Parser::processModification() {
-		current_result->typeOfStatement = "Modification";
+		current_result->typeOfStatement = Modification;
 		ph.advance_token(ph.e_advance);
 
 		if (!ph.token_is_then_assign(token::e_symbol, current_result->ID)) { // checking streamID
@@ -108,6 +110,7 @@ namespace Synth {
 
 	int Parser::processGeneralStatement() {
 		current_result->function = ph.current_token().value;
+		current_result->typeOfStatement = GeneralStatement;
 		ph.advance_token(ph.e_advance);
 
 		//LeftPar Check

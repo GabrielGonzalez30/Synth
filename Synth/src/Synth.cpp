@@ -19,7 +19,32 @@ namespace Synth {
 		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
 		~Synth() { delete streamIDs; }
 
-		
+		void TerminalInterpreter() {
+			cout << "Welcome to Synth!" << endl;
+			while (1) { //aqui algo debe de haber por si hay un fatal error
+				cout << ">" << endl;
+
+				//get the next line
+				string line;
+				getline(cin, line);
+
+				//parse the line
+				ParsedResult* pr = parser.process(line);
+
+				//execute the line
+				int error = evaluate(pr);
+				if (error > 0) {
+					handleError(error);
+				}
+
+				//free parsed result
+				delete pr;
+			}
+		}
+
+		void FileInterpreter(int argCounter, char** arguments) {
+			//TODO
+		}
 
 		//methods
 		Parser& getParser() {
@@ -29,59 +54,52 @@ namespace Synth {
 		Audio& getAudio() {
 			return audio;
 		}
-
-		void processLine(string& line) {
-			
-		}
 		
-
 	private:
 		unordered_map<string, Stream*>* streamIDs;
 		Parser parser;
 		Audio audio;
-		//SynthError evaluate(string& line);
-		//void handleError(SynthError& error);
-		
 
+		//evaluates the line, returns 0 if there was no error, other wise return error code
+		int evaluate(ParsedResult* pr) {
+			if (pr->error == 0) {
+				int error = 0;
+				//HERE GOES ALL THE HARD CODED FUNCTIONALITY
+				switch (pr->typeOfStatement) {
+
+				case 0: { //InitStream
+
+					break;
+				}
+				case 1: { //Modification
+
+					break;
+				}
+				case 2: { //General Statement
+
+					break;
+				}
+				default:
+					break;
+				}
+
+				return error;
+			} 
+			else {
+				return pr->error;
+			}
+		}
+		void handleError(int error) {
+
+		}
 	};
 
 	struct SynthError {
-
+		//TODO
 	};
 }
 
 
-void parserTest() {
-
-	Synth::Synth s;
-
-	while (1) {
-		//get the next line
-
-		//parse the line
-
-		//check what function does it need to do
-
-		//execute function
-
-		//free parsed result
-
-
-		cout << ">> ";
-		string line;
-		getline(cin, line);
-
-		auto theLine = s.getParser().process(line);
-
-		cout << "Function: " << theLine->function << endl;
-		cout << "Type Of Statement: " << theLine->typeOfStatement << endl;
-		cout << "ID: " << theLine->ID << endl;
-		cout << "Params: " << theLine->params->size() << endl;
-		cout << "Error: " << (theLine->error > 0 ? "true" : "false") << endl;
-
-		delete theLine;
-	}
-}
 int synthTest() {
 	// Set the global sample rate before creating class instances.
 	Stk::setSampleRate(44100.0);
@@ -126,7 +144,6 @@ cleanup:
 	delete s;
 	return 0;
 }
-
 int synthTest2() {
 	Synth::Synth s;
 	Synth::SynthesizerStream synth;
@@ -154,8 +171,9 @@ int synthTest2() {
 	return 0;
 }
 
-int main() {
-	synthTest2();
+int main(int argc, char** argv) {
+	Synth::Synth synth;
+	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
 }
 
 
