@@ -2,7 +2,7 @@
 #include "Stream.h"
 
 namespace Synth {
-	class AudioFileStream : Stream
+	class AudioFileStream : public Stream
 	{
 	public:
 		AudioFileStream();

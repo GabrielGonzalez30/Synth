@@ -5,6 +5,7 @@
 #include "RtWvOut.h"
 #include "streams/SynthesizerStream.h"
 #include "lexer/Parser.h"
+#include "Audio.h";
 
 using namespace std;
 using namespace stk;
@@ -15,30 +16,44 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<string, Stream*>()) {}
+		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
 		~Synth() { delete streamIDs; }
 
-		//instance variables
-		Parser parser;
+		
 
 		//methods
-		//void Interpreter();
+		Parser& getParser() {
+			return parser;
+		}
+
+		Audio& getAudio() {
+			return audio;
+		}
+
+		void processLine(string& line) {
+			
+		}
 		
 
 	private:
 		unordered_map<string, Stream*>* streamIDs;
-		//SynthError* evaluate(string& line);
+		Parser parser;
+		Audio audio;
+		//SynthError evaluate(string& line);
 		//void handleError(SynthError& error);
+		
+
 	};
 
-	/*struct SynthError {
+	struct SynthError {
 
-	};*/
+	};
 }
 
-int main() {
 
-	/*Synth::Synth s;
+void parserTest() {
+
+	Synth::Synth s;
 
 	while (1) {
 		//get the next line
@@ -56,7 +71,7 @@ int main() {
 		string line;
 		getline(cin, line);
 
-		auto theLine = s.parser.process(line);
+		auto theLine = s.getParser().process(line);
 
 		cout << "Function: " << theLine->function << endl;
 		cout << "Type Of Statement: " << theLine->typeOfStatement << endl;
@@ -65,8 +80,9 @@ int main() {
 		cout << "Error: " << (theLine->error > 0 ? "true" : "false") << endl;
 
 		delete theLine;
-	}*/
-
+	}
+}
+int synthTest() {
 	// Set the global sample rate before creating class instances.
 	Stk::setSampleRate(44100.0);
 	Stk::showWarnings(true);
@@ -91,7 +107,7 @@ int main() {
 	s->setFrequency(880);
 	track.addSine(*s);
 
-	
+
 
 	//Playing
 	for (int i = 0; i < nFrames; i++) {
@@ -109,5 +125,38 @@ cleanup:
 	delete dac;
 	delete s;
 	return 0;
-
 }
+
+int synthTest2() {
+	Synth::Synth s;
+	Synth::SynthesizerStream synth;
+	Synth::SynthesizerStream otherSynth;
+	stk::SineWave sine;
+	sine.setFrequency(200);
+	stk::BlitSquare square;
+	square.setFrequency(300);
+	stk::BlitSaw saw;
+	saw.setFrequency(600);
+
+	synth.addSine(sine);
+	//synth.addSqrt(square);
+	otherSynth.addTrig(saw);
+
+	s.getAudio().addStream(synth);
+	s.getAudio().addStream(otherSynth);
+
+	s.getAudio().startStream();
+
+	cin.get();
+
+	s.getAudio().stopStream();
+
+	return 0;
+}
+
+int main() {
+	synthTest2();
+}
+
+
+

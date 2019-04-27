@@ -56,5 +56,8 @@
     <ClInclude Include="..\lib\lexertk\lexertk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Audio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

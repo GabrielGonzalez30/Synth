@@ -6,7 +6,7 @@
 
 
 namespace Synth {
-	class SynthesizerStream : Stream
+	class SynthesizerStream : public Stream
 	{
 	public:
 		SynthesizerStream();
