@@ -68,9 +68,22 @@ namespace Synth {
 				//HERE GOES ALL THE HARD CODED FUNCTIONALITY
 				switch (pr->typeOfStatement) {
 
-				case 0: { //InitStream
-					//TODO: Tua & Jaime
+				case 0: { 
+					Stream* stream;
+					string typeOfStream = pr->params->at(0);
 
+					if (typeOfStream == "Synthesizer") {
+						stream = new SynthesizerStream;
+						streamIDs->insert(pair(pr->ID, stream));
+						error = 0;
+					}
+
+					else if (typeOfStream == "Audio") {
+						stream = new SynthesizerStream;
+						streamIDs->insert(pair(pr->ID, stream));
+
+						error = 0;
+					}
 				}
 				case 1: { //Modification
 					//TODO: Tua & Jaime
