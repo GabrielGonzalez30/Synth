@@ -17,7 +17,8 @@ namespace Synth {
 	public:
 		//constructor, destructor
 		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
-		~Synth() { delete streamIDs; }
+		~Synth() { 
+			delete streamIDs;  }
 
 		void TerminalInterpreter() {
 			cout << "Welcome to Synth!" << endl;
@@ -43,7 +44,7 @@ namespace Synth {
 		}
 
 		void FileInterpreter(int argCounter, char** arguments) {
-			//TODO
+			//TODO: Pedro
 		}
 
 		//methods
@@ -68,15 +69,36 @@ namespace Synth {
 				switch (pr->typeOfStatement) {
 
 				case 0: { //InitStream
+					//TODO: Tua & Jaime
 
-					break;
 				}
 				case 1: { //Modification
+					//TODO: Tua & Jaime
 
+					/*
+						MODIFIER FUNCTIONS
+
+						<Synthesizer only> setFrequency(number)
+						<Synthesizer only> setAmplitude(number)
+						<Synthesizer only> setWave(Sine | Saw | Square)
+
+
+						
+					*/
 					break;
 				}
 				case 2: { //General Statement
+					//TODO: Tua & Jaime
+					/*
+						GENERAL FUNCTIONS
 
+						play(stream, number)
+						play(stream)
+						pause(stream)
+						removeStream(stream)
+						
+
+					*/
 					break;
 				}
 				default:
@@ -95,7 +117,7 @@ namespace Synth {
 	};
 
 	struct SynthError {
-		//TODO
+		//TODO: Gabriel
 	};
 }
 

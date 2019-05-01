@@ -6,8 +6,7 @@
 
 
 namespace Synth {
-	class SynthesizerStream : public Stream
-	{
+	class SynthesizerStream : public Stream {
 	public:
 		SynthesizerStream();
 		~SynthesizerStream();
@@ -15,6 +14,20 @@ namespace Synth {
 		void addSqrt(stk::BlitSquare b);
 		void addTrig(stk::BlitSaw b);
 		virtual float tick();
+
+		void setFrequency(float number) {
+			for (unsigned int i = 0; i < s_index; i++) {
+				sine_waves[i].setFrequency(number);
+			}
+			for (unsigned int i = 0; i < sq_index; i++) {
+				sqrt_waves[i].setFrequency(number);
+			}
+			for (unsigned int i = 0; i < t_index; i++) {
+				trig_waves[i].setFrequency(number);
+			}
+		}
+
+		
 
 	private:
 		stk::SineWave sine_waves[50]; //Assumes 50 is more than enought.
@@ -26,4 +39,3 @@ namespace Synth {
 		int t_index;
 	};
 }
-
