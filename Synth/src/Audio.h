@@ -3,6 +3,7 @@
 #include "Stk.h"
 #include "streams/Stream.h"
 #include <vector>
+#include "Synth.cpp"
 
 using namespace stk;
 using namespace std;
@@ -14,8 +15,8 @@ namespace Synth {
 
 	class Audio {
 	public:
-		Audio();
-		Audio(int sampleRate, int bufferRate);
+		Audio(Synth * synthRef);
+		Audio(Synth * synthRef, int sampleRate, int bufferRate);
 		~Audio();
 
 		void addStream(Stream& s);
@@ -29,6 +30,7 @@ namespace Synth {
 		unsigned int sampleRate;
 		unsigned int bufferFrames;
 		unsigned int bufferBytes;
+		Synth* synthRef;
 		RtAudio engine;
 		RtAudio::StreamParameters iParams, oParams;
 		vector<Stream*> streams;
