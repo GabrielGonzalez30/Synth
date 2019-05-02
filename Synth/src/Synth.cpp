@@ -133,19 +133,19 @@ namespace Synth {
 					}
 					if (pr->function == "setWave") {
 						if (parameters == "Sine") {
-							ID->addSine(stk::SineWave());
+							ID->addSine(200);
 							error = 0;
 							break;
 						}
 
 						if (parameters == "Saw") {
-							ID->addTrig(stk::BlitSaw());
+							ID->addTrig(200);
 							error = 0;
 							break;
 						}
 
 						if (parameters == "Square") {
-							ID->addSqrt(stk::BlitSquare());
+							ID->addSqrt(200);
 							error = 0;
 							break;
 						}
@@ -176,6 +176,7 @@ namespace Synth {
 							if (tools::is_number(pr->params->at(1))) {
 								int duration = std::stoi(pr->params->at(1));
 								stream->play(duration);
+								sleep(duration*1000);
 								error = 0;
 								break;
 							}
