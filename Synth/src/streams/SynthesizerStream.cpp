@@ -43,8 +43,9 @@ namespace Synth {
 			total += trig_waves[i].tick();
 
 		}
+		if ((s_index + sq_index + t_index) == 0)
+			return 0;
 		return total / (s_index + sq_index + t_index);
-		//TODO check div 0
 	}
 
 };

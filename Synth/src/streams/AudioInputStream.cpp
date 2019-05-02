@@ -22,6 +22,7 @@ namespace Synth {
 	}
 
 	float AudioInputStream::tick() {
-		return voice.tick();
+		return 0;
+		//return voice.tick();
 	}
 }

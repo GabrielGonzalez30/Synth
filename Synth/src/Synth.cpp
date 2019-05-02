@@ -5,7 +5,8 @@
 #include "RtWvOut.h"
 #include "streams/SynthesizerStream.h"
 #include "lexer/Parser.h"
-#include "Audio.h";
+#include "Audio.h"
+#include "fstream"
 
 using namespace std;
 using namespace stk;
@@ -43,7 +44,17 @@ namespace Synth {
 		}
 
 		void FileInterpreter(int argCounter, char** arguments) {
-			//TODO
+			std::ifstream infile(arguments[0]);
+			std:string line;
+			ParsedResult* pr;
+			int error;
+			while(std::getline(infile, line)){
+				pr = parser.process(line);
+				error = evaluate(pr);
+				if (error > 0) {
+					handleError(error);
+				}
+			}
 		}
 
 		//methods
@@ -116,14 +127,10 @@ int synthTest() {
 	}
 
 	//Adding 3 sine waves
-	SineWave* s = new SineWave();
-	s->setFrequency(440);
 	Synth::SynthesizerStream track;
-	track.addSine(*s);
-	s->setFrequency(220);
-	track.addSine(*s);
-	s->setFrequency(880);
-	track.addSine(*s);
+	track.addSine(440);
+	track.addSine(220);
+	track.addSine(880);
 
 
 
@@ -141,13 +148,12 @@ int synthTest() {
 
 cleanup:
 	delete dac;
-	delete s;
 	return 0;
 }
 int synthTest2() {
 	Synth::Synth s;
 	Synth::SynthesizerStream synth;
-	Synth::SynthesizerStream otherSynth
+	Synth::SynthesizerStream otherSynth;
 
 	synth.addSine(200);
 	synth.addSqrt(300);
@@ -166,9 +172,9 @@ int synthTest2() {
 }
 
 int main(int argc, char** argv) {
-	synthTest2();
-	//Synth::Synth synth;
-	//argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+	//synthTest2();
+	Synth::Synth synth;
+	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
 }
 
 

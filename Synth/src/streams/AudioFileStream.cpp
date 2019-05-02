@@ -21,12 +21,15 @@ namespace Synth {
 		for (unsigned int i = 0; i < f_index; i++) {
 			total += files[i].tick();
 		}
+		if (f_index == 0)
+			return 0;
 		return total / f_index;
-		//TODO check div 0
 	}
 
 	void AudioFileStream::removeAudioFile(int i) {
-		//TODO add validation
+		if (i<0 || i>=f_index)
+			return;
+
 		files[i].closeFile();
 		for (int j = i; j < f_index; j++) {
 			files[j] = files[j + 1];
