@@ -1,182 +1,169 @@
 /***************************************************/
-/*! \class ModalBar
-    \brief STK resonant bar instrument class.
+/*! \class Modal
+    \brief STK resonance model abstract base class.
 
-    This class implements a number of different
-    struck bar instruments.  It inherits from the
-    Modal class.
+    This class contains an excitation wavetable,
+    an envelope, an oscillator, and N resonances
+    (non-sweeping BiQuad filters), where N is set
+    during instantiation.
 
-    Control Change Numbers: 
-       - Stick Hardness = 2
-       - Stick Position = 4
-       - Vibrato Gain = 8
-       - Vibrato Frequency = 11
-       - Direct Stick Mix = 1
-       - Volume = 128
-       - Modal Presets = 16
-         - Marimba = 0
-         - Vibraphone = 1
-         - Agogo = 2
-         - Wood1 = 3
-         - Reso = 4
-         - Wood2 = 5
-         - Beats = 6
-         - Two Fixed = 7
-         - Clump = 8
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "ModalBar.h"
-#include "SKINImsg.h"
-#include <cmath>
+#include "Modal.h"
+#include <cstdlib>
 
 namespace stk {
 
-ModalBar :: ModalBar( void )
-  : Modal()
+Modal :: Modal( unsigned int modes )
+  : nModes_(modes)
 {
-  // Concatenate the STK rawwave path to the rawwave file
-  wave_ = new FileWvIn( (Stk::rawwavePath() + "marmstk1.raw").c_str(), true );
-  wave_->setRate( 0.5 * 22050.0 / Stk::sampleRate() );
-
-  // Set the resonances for preset 0 (marimba).
-  this->setPreset( 0 );
-}
-
-ModalBar :: ~ModalBar( void )
-{
-  delete wave_;
-}
-
-void ModalBar :: setStickHardness( StkFloat hardness )
-{
-  if ( hardness < 0.0 || hardness > 1.0 ) {
-    oStream_ << "ModalBar::setStickHardness: parameter is out of range!";
-    handleError( StkError::WARNING ); return;
+  if ( nModes_ == 0 ) {
+    oStream_ << "Modal: 'modes' argument to constructor is zero!";
+    handleError( StkError::FUNCTION_ARGUMENT );
   }
 
-  stickHardness_ = hardness;
-  wave_->setRate( (0.25 * pow(4.0, stickHardness_) ) );
-  masterGain_ = 0.1 + (1.8 * stickHardness_);
-}
+  // We don't make the excitation wave here yet, because we don't know
+  // what it's going to be.
 
-void ModalBar :: setStrikePosition( StkFloat position )
-{
-  if ( position < 0.0 || position > 1.0 ) {
-    oStream_ << "ModalBar::setStrikePosition: parameter is out of range!";
-    handleError( StkError::WARNING ); return;
+  ratios_.resize( nModes_ );
+  radii_.resize( nModes_ );
+  filters_ = (BiQuad **) calloc( nModes_, sizeof(BiQuad *) );
+  for (unsigned int i=0; i<nModes_; i++ ) {
+    filters_[i] = new BiQuad;
+    filters_[i]->setEqualGainZeroes();
   }
 
-  strikePosition_ = position;
+  // Set some default values.
+  vibrato_.setFrequency( 6.0 );
+  vibratoGain_ = 0.0;
+  directGain_ = 0.0;
+  masterGain_ = 1.0;
+  baseFrequency_ = 440.0;
 
-  // Hack only first three modes.
-  StkFloat temp2 = position * PI;
-  StkFloat temp = sin(temp2);                                       
-  this->setModeGain(0, 0.12 * temp);
+  this->clear();
 
-  temp = sin(0.05 + (3.9 * temp2));
-  this->setModeGain(1, -0.03 * temp);
+  stickHardness_ =  0.5;
+  strikePosition_ = 0.561;
+}  
 
-  temp = sin(-0.05 + (11 * temp2));
-  this->setModeGain(2, 0.11 * temp);
-}
-
-void ModalBar :: setPreset( int preset )
+Modal :: ~Modal( void )
 {
-  // Presets:
-  //     First line:  relative modal frequencies (negative number is
-  //                  a fixed mode that doesn't scale with frequency
-  //     Second line: resonances of the modes
-  //     Third line:  mode volumes
-  //     Fourth line: stickHardness, strikePosition, and direct stick
-  //                  gain (mixed directly into the output
-  static StkFloat presets[9][4][4] = { 
-    {{1.0, 3.99, 10.65, -2443},		// Marimba
-     {0.9996, 0.9994, 0.9994, 0.999},
-     {0.04, 0.01, 0.01, 0.008},
-     {0.429688, 0.445312, 0.093750}},
-    {{1.0, 2.01, 3.9, 14.37}, 		// Vibraphone
-     {0.99995, 0.99991, 0.99992, 0.9999},	
-     {0.025, 0.015, 0.015, 0.015 },
-     {0.390625,0.570312,0.078125}},
-    {{1.0, 4.08, 6.669, -3725.0},		// Agogo 
-     {0.999, 0.999, 0.999, 0.999},	
-     {0.06, 0.05, 0.03, 0.02},
-     {0.609375,0.359375,0.140625}},
-    {{1.0, 2.777, 7.378, 15.377},		// Wood1
-     {0.996, 0.994, 0.994, 0.99},	
-     {0.04, 0.01, 0.01, 0.008},
-     {0.460938,0.375000,0.046875}},
-    {{1.0, 2.777, 7.378, 15.377},		// Reso
-     {0.99996, 0.99994, 0.99994, 0.9999},	
-     {0.02, 0.005, 0.005, 0.004},
-     {0.453125,0.250000,0.101562}},
-    {{1.0, 1.777, 2.378, 3.377},		// Wood2
-     {0.996, 0.994, 0.994, 0.99},	
-     {0.04, 0.01, 0.01, 0.008},
-     {0.312500,0.445312,0.109375}},
-    {{1.0, 1.004, 1.013, 2.377},		// Beats
-     {0.9999, 0.9999, 0.9999, 0.999},	
-     {0.02, 0.005, 0.005, 0.004},
-     {0.398438,0.296875,0.070312}},
-    {{1.0, 4.0, -1320.0, -3960.0},		// 2Fix
-     {0.9996, 0.999, 0.9994, 0.999},	
-     {0.04, 0.01, 0.01, 0.008},
-     {0.453125,0.453125,0.070312}},
-    {{1.0, 1.217, 1.475, 1.729},		// Clump
-     {0.999, 0.999, 0.999, 0.999},	
-     {0.03, 0.03, 0.03, 0.03 },
-     {0.390625,0.570312,0.078125}},
-  };
-
-  int temp = (preset % 9);
-  for (unsigned int i=0; i<nModes_; i++) {
-    this->setRatioAndRadius(i, presets[temp][0][i], presets[temp][1][i]);
-    this->setModeGain(i, presets[temp][2][i]);
+  for ( unsigned int i=0; i<nModes_; i++ ) {
+    delete filters_[i];
   }
-
-  this->setStickHardness(presets[temp][3][0]);
-  this->setStrikePosition(presets[temp][3][1]);
-  directGain_ = presets[temp][3][2];
-
-  if (temp == 1) // vibraphone
-    vibratoGain_ = 0.2;
-  else
-    vibratoGain_ = 0.0;
+  free( filters_ );
 }
 
-void ModalBar :: controlChange( int number, StkFloat value )
+void Modal :: clear( void )
+{    
+  onepole_.clear();
+  for ( unsigned int i=0; i<nModes_; i++ )
+    filters_[i]->clear();
+}
+
+void Modal :: setFrequency( StkFloat frequency )
 {
 #if defined(_STK_DEBUG_)
-  if ( Stk::inRange( value, 0.0, 128.0 ) == false ) {
-    oStream_ << "ModalBar::controlChange: value (" << value << ") is out of range!";
+  if ( frequency <= 0.0 ) {
+    oStream_ << "Modal::setFrequency: argument is less than or equal to zero!";
     handleError( StkError::WARNING ); return;
   }
 #endif
 
-  StkFloat normalizedValue = value * ONE_OVER_128;
-  if (number == __SK_StickHardness_) // 2
-    this->setStickHardness( normalizedValue );
-  else if (number == __SK_StrikePosition_) // 4
-    this->setStrikePosition( normalizedValue );
-  else if (number == __SK_ProphesyRibbon_) // 16
-		this->setPreset((int) value);
-  else if (number == __SK_Balance_) // 8
-    vibratoGain_ = normalizedValue * 0.3;
-  else if (number == __SK_ModWheel_) // 1
-    directGain_ = normalizedValue;
-  else if (number == __SK_ModFrequency_) // 11
-    vibrato_.setFrequency( normalizedValue * 12.0 );
-  else if (number == __SK_AfterTouch_Cont_)	// 128
-    envelope_.setTarget( normalizedValue );
-#if defined(_STK_DEBUG_)
+  baseFrequency_ = frequency;
+  for ( unsigned int i=0; i<nModes_; i++ )
+    this->setRatioAndRadius( i, ratios_[i], radii_[i] );
+}
+
+void Modal :: setRatioAndRadius( unsigned int modeIndex, StkFloat ratio, StkFloat radius )
+{
+  if ( modeIndex >= nModes_ ) {
+    oStream_ << "Modal::setRatioAndRadius: modeIndex parameter is greater than number of modes!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  StkFloat nyquist = Stk::sampleRate() / 2.0;
+  StkFloat temp;
+
+  if ( ratio * baseFrequency_ < nyquist ) {
+    ratios_[modeIndex] = ratio;
+  }
   else {
-    oStream_ << "ModalBar::controlChange: undefined control number (" << number << ")!";
+    temp = ratio;
+    while (temp * baseFrequency_ > nyquist) temp *= 0.5;
+    ratios_[modeIndex] = temp;
+#if defined(_STK_DEBUG_)
+    oStream_ << "Modal::setRatioAndRadius: aliasing would occur here ... correcting.";
+    handleError( StkError::DEBUG_PRINT );
+#endif
+  }
+  radii_[modeIndex] = radius;
+  if (ratio < 0) 
+    temp = -ratio;
+  else
+    temp = ratio * baseFrequency_;
+
+  filters_[modeIndex]->setResonance(temp, radius);
+}
+
+void Modal :: setModeGain( unsigned int modeIndex, StkFloat gain )
+{
+  if ( modeIndex >= nModes_ ) {
+    oStream_ << "Modal::setModeGain: modeIndex parameter is greater than number of modes!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  filters_[modeIndex]->setGain( gain );
+}
+
+void Modal :: strike( StkFloat amplitude )
+{
+  if ( amplitude < 0.0 || amplitude > 1.0 ) {
+    oStream_ << "Modal::strike: amplitude is out of range!";
     handleError( StkError::WARNING );
   }
-#endif
+
+  envelope_.setRate( 1.0 );
+  envelope_.setTarget( amplitude );
+  onepole_.setPole( 1.0 - amplitude );
+  envelope_.tick();
+  wave_->reset();
+
+  StkFloat temp;
+  for ( unsigned int i=0; i<nModes_; i++ ) {
+    if (ratios_[i] < 0)
+      temp = -ratios_[i];
+    else
+      temp = ratios_[i] * baseFrequency_;
+    filters_[i]->setResonance(temp, radii_[i]);
+  }
+}
+
+void Modal :: noteOn( StkFloat frequency, StkFloat amplitude )
+{
+  this->strike( amplitude );
+  this->setFrequency( frequency );
+}
+
+void Modal :: noteOff( StkFloat amplitude )
+{
+  // This calls damp, but inverts the meaning of amplitude (high
+  // amplitude means fast damping).
+  this->damp( 1.0 - (amplitude * 0.03) );
+}
+
+void Modal :: damp( StkFloat amplitude )
+{
+  StkFloat temp;
+  for ( unsigned int i=0; i<nModes_; i++ ) {
+    if ( ratios_[i] < 0 )
+      temp = -ratios_[i];
+    else
+      temp = ratios_[i] * baseFrequency_;
+    filters_[i]->setResonance( temp, radii_[i]*amplitude );
+  }
 }
 
 } // stk namespace

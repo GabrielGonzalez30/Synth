@@ -1,53 +1,78 @@
 /***************************************************/
-/*! \class SingWave
-    \brief STK "singing" looped soundfile class.
+/*! \class SineWave
+    \brief STK sinusoid oscillator class.
 
-    This class loops a specified soundfile and modulates it both
-    periodically and randomly to produce a pitched musical sound, like
-    a simple voice or violin.  In general, it is not be used alone
-    because of "munchkinification" effects from pitch shifting.
-    Within STK, it is used as an excitation source for other
-    instruments.
+    This class computes and saves a static sine "table" that can be
+    shared by multiple instances.  It has an interface similar to the
+    WaveLoop class but inherits from the Generator class.  Output
+    values are computed using linear interpolation.
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    The "table" length, set in SineWave.h, is 2048 samples by default.
+
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "SingWave.h"
+#include "SineWave.h"
+#include <cmath>
 
 namespace stk {
- 
-SingWave :: SingWave( std::string fileName, bool raw )
+
+StkFrames SineWave :: table_;
+
+SineWave :: SineWave( void )
+  : time_(0.0), rate_(1.0), phaseOffset_(0.0)
 {
-  // An exception could be thrown here.
-  wave_.openFile( fileName, raw );
+  if ( table_.empty() ) {
+    table_.resize( TABLE_SIZE + 1, 1 );
+    StkFloat temp = 1.0 / TABLE_SIZE;
+    for ( unsigned long i=0; i<=TABLE_SIZE; i++ )
+      table_[i] = sin( TWO_PI * i * temp );
+  }
 
-	rate_ = 1.0;
-	sweepRate_ = 0.001;
-
-	modulator_.setVibratoRate( 6.0 );
-	modulator_.setVibratoGain( 0.04 );
-	modulator_.setRandomGain( 0.005 );
-
-	this->setFrequency( 75.0 );
-	pitchEnvelope_.setRate( 1.0 );
-	this->tick();
-	this->tick();
-	pitchEnvelope_.setRate( sweepRate_ * rate_ );
+  Stk::addSampleRateAlert( this );
 }
 
-SingWave :: ~SingWave()
+SineWave :: ~SineWave()
 {
+  Stk::removeSampleRateAlert( this );
 }
 
-void SingWave :: setFrequency( StkFloat frequency )
+void SineWave :: sampleRateChanged( StkFloat newRate, StkFloat oldRate )
 {
-	StkFloat temp = rate_;
-	rate_ = wave_.getSize() * frequency / Stk::sampleRate();
-	temp -= rate_;
-	if ( temp < 0) temp = -temp;
-	pitchEnvelope_.setTarget( rate_ );
-	pitchEnvelope_.setRate( sweepRate_ * temp );
+  if ( !ignoreSampleRateChange_ )
+    this->setRate( oldRate * rate_ / newRate );
+}
+
+void SineWave :: reset( void )
+{
+  time_ = 0.0;
+  lastFrame_[0] = 0;
+}
+
+void SineWave :: setFrequency( StkFloat frequency )
+{
+  // This is a looping frequency.
+  this->setRate( TABLE_SIZE * frequency / Stk::sampleRate() );
+}
+
+void SineWave :: addTime( StkFloat time )
+{
+  // Add an absolute time in samples.
+  time_ += time;
+}
+
+void SineWave :: addPhase( StkFloat phase )
+{
+  // Add a time in cycles (one cycle = TABLE_SIZE).
+  time_ += TABLE_SIZE * phase;
+}
+
+void SineWave :: addPhaseOffset( StkFloat phaseOffset )
+{
+  // Add a phase offset relative to any previous offset value.
+  time_ += ( phaseOffset - phaseOffset_ ) * TABLE_SIZE;
+  phaseOffset_ = phaseOffset;
 }
 
 } // stk namespace

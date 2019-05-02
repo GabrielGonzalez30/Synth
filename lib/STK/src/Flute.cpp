@@ -18,7 +18,7 @@
        - Vibrato Gain = 1
        - Breath Pressure = 128
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
@@ -47,8 +47,8 @@ Flute :: Flute( StkFloat lowestFrequency )
   adsr_.setAllTimes( 0.005, 0.01, 0.8, 0.010 );
   endReflection_ = 0.5;
   jetReflection_ = 0.5;
-  noiseGain_     = 0.15;    // Breath pressure random component.
-  vibratoGain_   = 0.05;    // Breath periodic vibrato component.
+  noiseGain_     = 0.15;    // Breath pressure random component
+  vibratoGain_   = 0.05;    // Breath periodic vibrato component
   jetRatio_      = 0.32;
 
 	maxPressure_ = 0.0;

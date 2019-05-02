@@ -1,98 +1,88 @@
 /***************************************************/
-/*! \class Plucked
-    \brief STK basic plucked string class.
+/*! \class PitShift
+    \brief STK simple pitch shifter effect class.
 
-    This class implements a simple plucked string
-    physical model based on the Karplus-Strong
-    algorithm.
+    This class implements a simple pitch shifter
+    using delay lines.
 
-    For a more advanced plucked string implementation,
-    see the stk::Twang class.
-
-    This is a digital waveguide model, making its
-    use possibly subject to patents held by
-    Stanford University, Yamaha, and others.
-    There exist at least two patents, assigned to
-    Stanford, bearing the names of Karplus and/or
-    Strong.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Plucked.h"
+#include "PitShift.h"
+#include <cmath>
 
 namespace stk {
 
-Plucked :: Plucked( StkFloat lowestFrequency )
+PitShift :: PitShift( void )
 {
-  if ( lowestFrequency <= 0.0 ) {
-    oStream_ << "Plucked::Plucked: argument is less than or equal to zero!";
-    handleError( StkError::FUNCTION_ARGUMENT );
+  delayLength_ = maxDelay - 24;
+  halfLength_ = delayLength_ / 2;
+  delay_[0] = 12;
+  delay_[1] = maxDelay / 2;
+
+  delayLine_[0].setMaximumDelay( maxDelay );
+  delayLine_[0].setDelay( delay_[0] );
+  delayLine_[1].setMaximumDelay( maxDelay );
+  delayLine_[1].setDelay( delay_[1] );
+  effectMix_ = 0.5;
+  rate_ = 1.0;
+}
+
+void PitShift :: clear()
+{
+  delayLine_[0].clear();
+  delayLine_[1].clear();
+  lastFrame_[0] = 0.0;
+}
+
+void PitShift :: setShift( StkFloat shift )
+{
+  if ( shift < 1.0 ) {
+    rate_ = 1.0 - shift; 
   }
-
-  unsigned long delays = (unsigned long) ( Stk::sampleRate() / lowestFrequency );
-  delayLine_.setMaximumDelay( delays + 1 );
-
-  this->setFrequency( 220.0 );
+  else if ( shift > 1.0 ) {
+    rate_ = 1.0 - shift;
+  }
+  else {
+    rate_ = 0.0;
+    delay_[0] = halfLength_ + 12;
+  }
 }
 
-Plucked :: ~Plucked( void )
-{
-}
-
-void Plucked :: clear( void )
-{
-  delayLine_.clear();
-  loopFilter_.clear();
-  pickFilter_.clear();
-}
-
-void Plucked :: setFrequency( StkFloat frequency )
+StkFrames& PitShift :: tick( StkFrames& frames, unsigned int channel )
 {
 #if defined(_STK_DEBUG_)
-  if ( frequency <= 0.0 ) {
-    oStream_ << "Plucked::setFrequency: argument is less than or equal to zero!";
-    handleError( StkError::WARNING ); return;
+  if ( channel >= frames.channels() ) {
+    oStream_ << "PitShift::tick(): channel and StkFrames arguments are incompatible!";
+    handleError( StkError::FUNCTION_ARGUMENT );
   }
 #endif
 
-  // Delay = length - filter delay.
-  StkFloat delay = ( Stk::sampleRate() / frequency ) - loopFilter_.phaseDelay( frequency );
-  delayLine_.setDelay( delay );
+  StkFloat *samples = &frames[channel];
+  unsigned int hop = frames.channels();
+  for ( unsigned int i=0; i<frames.frames(); i++, samples += hop )
+    *samples = tick( *samples );
 
-  loopGain_ = 0.995 + (frequency * 0.000005);
-  if ( loopGain_ >= 1.0 ) loopGain_ = 0.99999;
+  return frames;
 }
 
-void Plucked :: pluck( StkFloat amplitude )
+StkFrames& PitShift :: tick( StkFrames& iFrames, StkFrames& oFrames, unsigned int iChannel, unsigned int oChannel )
 {
-  if ( amplitude < 0.0 || amplitude > 1.0 ) {
-    oStream_ << "Plucked::pluck: amplitude is out of range!";
-    handleError( StkError::WARNING ); return;
+#if defined(_STK_DEBUG_)
+  if ( iChannel >= iFrames.channels() || oChannel >= oFrames.channels() ) {
+    oStream_ << "PitShift::tick(): channel and StkFrames arguments are incompatible!";
+    handleError( StkError::FUNCTION_ARGUMENT );
   }
+#endif
 
-  pickFilter_.setPole( 0.999 - (amplitude * 0.15) );
-  pickFilter_.setGain( amplitude * 0.5 );
-  for ( unsigned long i=0; i<delayLine_.getDelay(); i++ )
-    // Fill delay with noise additively with current contents.
-    delayLine_.tick( 0.6 * delayLine_.lastOut() + pickFilter_.tick( noise_.tick() ) );
-}
+  StkFloat *iSamples = &iFrames[iChannel];
+  StkFloat *oSamples = &oFrames[oChannel];
+  unsigned int iHop = iFrames.channels(), oHop = oFrames.channels();
+  for ( unsigned int i=0; i<iFrames.frames(); i++, iSamples += iHop, oSamples += oHop )
+    *oSamples = tick( *iSamples );
 
-void Plucked :: noteOn( StkFloat frequency, StkFloat amplitude )
-{
-  this->setFrequency( frequency );
-  this->pluck( amplitude );
-}
-
-void Plucked :: noteOff( StkFloat amplitude )
-{
-  if ( amplitude < 0.0 || amplitude > 1.0 ) {
-    oStream_ << "Plucked::noteOff: amplitude is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  loopGain_ = 1.0 - amplitude;
+  return iFrames;
 }
 
 } // stk namespace

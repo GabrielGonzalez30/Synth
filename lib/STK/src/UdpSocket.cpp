@@ -1,189 +1,110 @@
 /***************************************************/
-/*! \class VoicForm
-    \brief Four formant synthesis instrument.
+/*! \class UdpSocket
+    \brief STK UDP socket server/client class.
 
-    This instrument contains an excitation singing
-    wavetable (looping wave with random and
-    periodic vibrato, smoothing on frequency,
-    etc.), excitation noise, and four sweepable
-    complex resonances.
+    This class provides a uniform cross-platform UDP socket
+    server/client interface.  Methods are provided for reading or
+    writing data buffers.  The constructor creates a UDP socket and
+    binds it to the specified port.  Note that only one socket can be
+    bound to a given port on the same machine.
 
-    Measured formant data is included, and enough
-    data is there to support either parallel or
-    cascade synthesis.  In the floating point case
-    cascade synthesis is the most natural so
-    that's what you'll find here.
+    UDP sockets provide unreliable, connection-less service.  Messages
+    can be lost, duplicated, or received out of order.  That said,
+    data transmission tends to be faster than with TCP connections and
+    datagrams are not potentially combined by the underlying system.
 
-    Control Change Numbers: 
-       - Voiced/Unvoiced Mix = 2
-       - Vowel/Phoneme Selection = 4
-       - Vibrato Frequency = 11
-       - Vibrato Gain = 1
-       - Loudness (Spectral Tilt) = 128
+    The user is responsible for checking the values returned by the
+    read/write methods.  Values less than or equal to zero indicate
+    the occurence of an error.
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "VoicForm.h"
-#include "Phonemes.h"
-#include "SKINImsg.h"
+#include "UdpSocket.h"
 #include <cstring>
-#include <cmath>
+#include <sstream>
 
 namespace stk {
 
-VoicForm :: VoicForm( void ) : Instrmnt()
+UdpSocket :: UdpSocket(int port )
 {
-  // Concatenate the STK rawwave path to the rawwave file
-  voiced_ = new SingWave( (Stk::rawwavePath() + "impuls20.raw").c_str(), true );
-  voiced_->setGainRate( 0.001 );
-  voiced_->setGainTarget( 0.0 );
+  validAddress_ = false;
 
-  for ( int i=0; i<4; i++ )
-    filters_[i].setSweepRate( 0.001 );
-    
-  onezero_.setZero( -0.9 );
-  onepole_.setPole( 0.9 );
-    
-  noiseEnv_.setRate( 0.001 );
-  noiseEnv_.setTarget( 0.0 );
-    
-  this->setPhoneme( "eee" );
-  this->clear();
-}  
+#if defined(__OS_WINDOWS__)  // windoze-only stuff
+  WSADATA wsaData;
+  WORD wVersionRequested = MAKEWORD(1,1);
 
-VoicForm :: ~VoicForm( void )
-{
-  delete voiced_;
-}
-
-void VoicForm :: clear( void )
-{
-  onezero_.clear();
-  onepole_.clear();
-  for ( int i=0; i<4; i++ ) {
-    filters_[i].clear();
-  }
-}
-
-void VoicForm :: setFrequency( StkFloat frequency )
-{
-#if defined(_STK_DEBUG_)
-  if ( frequency <= 0.0 ) {
-    oStream_ << "VoicForm::setFrequency: parameter is less than or equal to zero!";
-    handleError( StkError::WARNING ); return;
+  WSAStartup(wVersionRequested, &wsaData);
+  if (wsaData.wVersion != wVersionRequested) {
+    oStream_ << "UdpSocket: Incompatible Windows socket library version!";
+    handleError( StkError::PROCESS_SOCKET );
   }
 #endif
 
-  voiced_->setFrequency( frequency );
+  // Create the UDP socket
+  soket_ = ::socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+  if ( soket_ < 0 ) {
+    oStream_ << "UdpSocket: Couldn't create UDP socket!";
+    handleError( StkError::PROCESS_SOCKET );
+  }
+
+  struct sockaddr_in address;
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons( port );
+
+  // Bind socket to the appropriate port and interface (INADDR_ANY)
+  if ( bind(soket_, (struct sockaddr *)&address, sizeof(address)) < 0 ) {
+    oStream_ << "UdpSocket: Couldn't bind socket in constructor!";
+    handleError( StkError::PROCESS_SOCKET );
+  }
+
+  port_ = port;
 }
 
-bool VoicForm :: setPhoneme( const char *phoneme )
+UdpSocket :: ~UdpSocket()
 {
-  bool found = false;
-  unsigned int i = 0;
-  while( i < 32 && !found ) {
-    if ( !strcmp( Phonemes::name(i), phoneme ) ) {
-      found = true;
-      filters_[0].setTargets( Phonemes::formantFrequency(i, 0), Phonemes::formantRadius(i, 0), pow(10.0, Phonemes::formantGain(i, 0 ) / 20.0) );
-      filters_[1].setTargets( Phonemes::formantFrequency(i, 1), Phonemes::formantRadius(i, 1), pow(10.0, Phonemes::formantGain(i, 1 ) / 20.0) );
-      filters_[2].setTargets( Phonemes::formantFrequency(i, 2), Phonemes::formantRadius(i, 2), pow(10.0, Phonemes::formantGain(i, 2 ) / 20.0) );
-      filters_[3].setTargets( Phonemes::formantFrequency(i, 3), Phonemes::formantRadius(i, 3), pow(10.0, Phonemes::formantGain(i, 3 ) / 20.0) );
-      this->setVoiced( Phonemes::voiceGain( i ) );
-      this->setUnVoiced( Phonemes::noiseGain( i ) );
-    }
-    i++;
-  }
-
-  if ( !found ) {
-    oStream_ << "VoicForm::setPhoneme: phoneme " << phoneme << " not found!";
-    handleError( StkError::WARNING );
-  }
-
-  return found;
 }
 
-void VoicForm :: setFilterSweepRate( unsigned int whichOne, StkFloat rate )
+void UdpSocket :: setDestination( int port, std::string hostname )
 {
-  if ( whichOne > 3 ) {
-    oStream_ << "VoicForm::setFilterSweepRate: filter select argument outside range 0-3!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  filters_[whichOne].setSweepRate(rate);
+  this->setAddress( &address_, port, hostname );
+  validAddress_ = true;
 }
 
-void VoicForm :: quiet( void )
+void UdpSocket :: setAddress( struct sockaddr_in *address, int port, std::string hostname )
 {
-  voiced_->noteOff();
-  noiseEnv_.setTarget( 0.0 );
+  struct hostent *hostp;
+  if ( (hostp = gethostbyname( hostname.c_str() )) == 0 ) {
+    oStream_ << "UdpSocket::setAddress: unknown host (" << hostname << ")!";
+    handleError( StkError::PROCESS_SOCKET_IPADDR );
+  }
+
+  // Fill in the address structure
+  address->sin_family = AF_INET;
+  memcpy((void *)&address->sin_addr, hostp->h_addr, hostp->h_length);
+  address->sin_port = htons( port );
 }
 
-void VoicForm :: noteOn( StkFloat frequency, StkFloat amplitude )
+int UdpSocket :: writeBuffer( const void *buffer, long bufferSize, int flags )
 {
-  this->setFrequency( frequency );
-  voiced_->setGainTarget( amplitude );
-  onepole_.setPole( 0.97 - (amplitude * 0.2) );
+  if ( !isValid( soket_ ) || !validAddress_ ) return -1;
+  return sendto( soket_, (const char *)buffer, bufferSize, flags, (struct sockaddr *)&address_, sizeof(address_) );
 }
 
-void VoicForm :: controlChange( int number, StkFloat value )
+int UdpSocket :: readBuffer( void *buffer, long bufferSize, int flags )
 {
-#if defined(_STK_DEBUG_)
-  if ( Stk::inRange( value, 0.0, 128.0 ) == false ) {
-    oStream_ << "VoicForm::controlChange: value (" << value << ") is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-#endif
+  if ( !isValid( soket_ ) ) return -1;
+  return recvfrom( soket_, (char *)buffer, bufferSize, flags, NULL, NULL );
+}
 
-  StkFloat normalizedValue = value * ONE_OVER_128;
-  if (number == __SK_Breath_)	{ // 2
-    this->setVoiced( 1.0 - normalizedValue );
-    this->setUnVoiced( 0.01 * normalizedValue );
-  }
-  else if (number == __SK_FootControl_)	{ // 4
-    StkFloat temp = 0.0;
-    unsigned int i = (int) value;
-    if (i < 32)	{
-      temp = 0.9;
-    }
-    else if (i < 64)	{
-      i -= 32;
-      temp = 1.0;
-    }
-    else if (i < 96)	{
-      i -= 64;
-      temp = 1.1;
-    }
-    else if (i < 128)	{
-      i -= 96;
-      temp = 1.2;
-    }
-    else if (i == 128)	{
-      i = 0;
-      temp = 1.4;
-    }
-    filters_[0].setTargets( temp * Phonemes::formantFrequency(i, 0), Phonemes::formantRadius(i, 0), pow(10.0, Phonemes::formantGain(i, 0 ) / 20.0) );
-    filters_[1].setTargets( temp * Phonemes::formantFrequency(i, 1), Phonemes::formantRadius(i, 1), pow(10.0, Phonemes::formantGain(i, 1 ) / 20.0) );
-    filters_[2].setTargets( temp * Phonemes::formantFrequency(i, 2), Phonemes::formantRadius(i, 2), pow(10.0, Phonemes::formantGain(i, 2 ) / 20.0) );
-    filters_[3].setTargets( temp * Phonemes::formantFrequency(i, 3), Phonemes::formantRadius(i, 3), pow(10.0, Phonemes::formantGain(i, 3 ) / 20.0) );
-    this->setVoiced( Phonemes::voiceGain( i ) );
-    this->setUnVoiced( Phonemes::noiseGain( i ) );
-  }
-  else if (number == __SK_ModFrequency_) // 11
-    voiced_->setVibratoRate( normalizedValue * 12.0);  // 0 to 12 Hz
-  else if (number == __SK_ModWheel_) // 1
-    voiced_->setVibratoGain( normalizedValue * 0.2);
-  else if (number == __SK_AfterTouch_Cont_)	{ // 128
-    this->setVoiced( normalizedValue );
-    onepole_.setPole( 0.97 - ( normalizedValue * 0.2) );
-  }
-#if defined(_STK_DEBUG_)
-  else {
-    oStream_ << "VoicForm::controlChange: undefined control number (" << number << ")!";
-    handleError( StkError::WARNING );
-  }
-#endif
+int UdpSocket :: writeBufferTo( const void *buffer, long bufferSize, int port, std::string hostname, int flags )
+{
+  if ( !isValid( soket_ ) ) return -1;
+  struct sockaddr_in address;
+  this->setAddress( &address, port, hostname );
+  return sendto( soket_, (const char *)buffer, bufferSize, flags, (struct sockaddr *)&address, sizeof(address) );
 }
 
 } // stk namespace

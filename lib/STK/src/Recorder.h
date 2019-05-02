@@ -1,58 +1,59 @@
-#ifndef STK_BLOWBOTL_H
-#define STK_BLOWBOTL_H
+#ifndef STK_RECORDER_H
+#define STK_RECORDER_H
 
 #include "Instrmnt.h"
-#include "JetTable.h"
-#include "BiQuad.h"
-#include "PoleZero.h"
+#include "Iir.h"
+#include "DelayL.h"
 #include "Noise.h"
-#include "ADSR.h"
 #include "SineWave.h"
+#include "ADSR.h"
 
 namespace stk {
 
 /***************************************************/
-/*! \class BlowBotl
-    \brief STK blown bottle instrument class.
+/*! \class Recorder
+    \brief A recorder / flute physical model.
 
-    This class implements a helmholtz resonator
-    (biquad filter) with a polynomial jet
-    excitation (a la Cook).
+    This class implements a physical model of a recorder / 
+    flute instrument, based on the paper "Sound production
+    in recorderlike instruments. II. A simulation model."
+    by M.P. Verge, A. Hirschberg and R. Causse, Journal of
+    the Acoustical Society of America, 1997.
 
     Control Change Numbers: 
+       - Softness = 2
        - Noise Gain = 4
+       - Noise Cutoff = 16
        - Vibrato Frequency = 11
        - Vibrato Gain = 1
-       - Volume = 128
+       - Breath Pressure = 128
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2019.
+    by Mathias Bredholt, McGill University.
+    Formatted for STK by Gary Scavone, 2019.
 */
 /***************************************************/
 
-class BlowBotl : public Instrmnt
+class Recorder : public Instrmnt
 {
  public:
   //! Class constructor.
-  /*!
-    An StkError will be thrown if the rawwave path is incorrectly set.
-  */
-  BlowBotl( void );
+  Recorder( void );
 
   //! Class destructor.
-  ~BlowBotl( void );
+  ~Recorder( void );
 
   //! Reset and clear all internal state.
   void clear( void );
-
+  
   //! Set instrument parameters for a particular frequency.
-  void setFrequency( StkFloat frequency );
+  void setFrequency( StkFloat val );
 
   //! Apply breath velocity to instrument with given amplitude and rate of increase.
   void startBlowing( StkFloat amplitude, StkFloat rate );
 
   //! Decrease breath velocity with given rate of decrease.
   void stopBlowing( StkFloat rate );
-
+  
   //! Start a note with the given frequency and amplitude.
   void noteOn( StkFloat frequency, StkFloat amplitude );
 
@@ -75,49 +76,71 @@ class BlowBotl : public Instrmnt
   */
   StkFrames& tick( StkFrames& frames, unsigned int channel = 0 );
 
- protected:
+  void setBlowPressure( StkFloat val );
+  void setVibratoGain( StkFloat val );
+  void setVibratoFrequency( StkFloat val );
+  void setNoiseGain( StkFloat val );
+  void setBreathCutoff( StkFloat val );
+  void setSoftness( StkFloat val );
 
-  JetTable jetTable_;
-  BiQuad resonator_;
-  PoleZero dcBlock_;
-  Noise noise_;
-  ADSR adsr_;
-  SineWave vibrato_;
-  StkFloat maxPressure_;
-  StkFloat noiseGain_;
-  StkFloat vibratoGain_;
-  StkFloat outputGain_;
+ private:
+    DelayL pinDelay_;
+    DelayL poutDelay_;
+    DelayL jetDelay_;
+    Iir radiation_filter_;
+    Iir visco_in_filter_;
+    Iir visco_out_filter_;
+    Iir jetFilter_;
+    Noise turb_;
+    Iir turbFilter_;
+    SineWave vibrato_;
+    ADSR adsr_;
 
+    //StkFloat M{ 0 };
+    //StkFloat maxPressure_( 0 );
+    double maxPressure_;
+    //StkFloat blow{ 0 };
+    StkFloat vibratoGain_;
+    StkFloat noiseGain_;
+    StkFloat breathCutoff_;
+    StkFloat outputGain_;
+    StkFloat psi_;
+
+    StkFloat poutL_;
+    StkFloat pout_;
+    StkFloat poutm1_;
+    StkFloat poutm2_;
+    StkFloat pin_;
+    StkFloat pinm1_;
+    StkFloat pinm2_;
+
+    StkFloat b1;
+    StkFloat b3;
+    StkFloat b4;
+
+    StkFloat Uj_;
+    StkFloat Ujm1_;
+
+    StkFloat Qj_;
+    StkFloat Qjm1_;
+    StkFloat Qjm2_;
+
+    StkFloat Q1_;
+    StkFloat Q1m1_;
+    StkFloat Q1m2_;
+
+    StkFloat Qp_;
+    StkFloat Qpm1_;
+
+    StkFloat pm_;
 };
 
-inline StkFloat BlowBotl :: tick( unsigned int )
-{
-  StkFloat breathPressure;
-  StkFloat randPressure;
-  StkFloat pressureDiff;
-
-  // Calculate the breath pressure (envelope + vibrato)
-  breathPressure = maxPressure_ * adsr_.tick();
-  breathPressure += vibratoGain_ * vibrato_.tick();
-
-  pressureDiff = breathPressure - resonator_.lastOut();
-
-  randPressure = noiseGain_ * noise_.tick();
-  randPressure *= breathPressure;
-  randPressure *= (1.0 + pressureDiff);
-
-  resonator_.tick( breathPressure + randPressure - ( jetTable_.tick( pressureDiff ) * pressureDiff ) );
-  lastFrame_[0] = 0.2 * outputGain_ * dcBlock_.tick( pressureDiff );
-
-  return lastFrame_[0];
-}
-
-inline StkFrames& BlowBotl :: tick( StkFrames& frames, unsigned int channel )
+inline StkFrames& Recorder :: tick( StkFrames& frames, unsigned int channel )
 {
   unsigned int nChannels = lastFrame_.channels();
 #if defined(_STK_DEBUG_)
   if ( channel > frames.channels() - nChannels ) {
-    oStream_ << "BlowBotl::tick(): channel and StkFrames arguments are incompatible!";
+    oStream_ << "Recorder::tick(): channel and StkFrames arguments are incompatible!";
     handleError( StkError::FUNCTION_ARGUMENT );
   }
 #endif

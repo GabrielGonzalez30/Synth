@@ -1,228 +1,92 @@
 /***************************************************/
-/*! \class Skini
-    \brief STK SKINI parsing class
+/*! \class Sitar
+    \brief STK sitar string model class.
 
-    This class parses SKINI formatted text
-    messages.  It can be used to parse individual
-    messages or it can be passed an entire file.
-    The SKINI specification is Perry's and his
-    alone, but it's all text so it shouldn't be too
-    hard to figure out.
+    This class implements a sitar plucked string
+    physical model based on the Karplus-Strong
+    algorithm.
 
-    SKINI (Synthesis toolKit Instrument Network
-    Interface) is like MIDI, but allows for
-    floating-point control changes, note numbers,
-    etc.  The following example causes a sharp
-    middle C to be played with a velocity of 111.132:
+    This is a digital waveguide model, making its
+    use possibly subject to patents held by
+    Stanford University, Yamaha, and others.
+    There exist at least two patents, assigned to
+    Stanford, bearing the names of Karplus and/or
+    Strong.
 
-    noteOn  60.01  111.132
-
-    See also SKINI.txt.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Skini.h"
-#include "SKINItbl.h"
-#include <cstdlib>
-#include <sstream>
+#include "Sitar.h"
 
 namespace stk {
 
-Skini :: Skini()
+Sitar :: Sitar( StkFloat lowestFrequency )
+{
+  if ( lowestFrequency <= 0.0 ) {
+    oStream_ << "Sitar::Sitar: argument is less than or equal to zero!";
+    handleError( StkError::FUNCTION_ARGUMENT );
+  }
+
+  unsigned long length = (unsigned long) ( Stk::sampleRate() / lowestFrequency + 1 );
+  delayLine_.setMaximumDelay( length );
+  delay_ = 0.5 * length;
+  delayLine_.setDelay( delay_ );
+  targetDelay_ = delay_;
+
+  loopFilter_.setZero( 0.01 );
+  loopGain_ = 0.999;
+
+  envelope_.setAllTimes( 0.001, 0.04, 0.0, 0.5 );
+  this->clear();
+}
+
+Sitar :: ~Sitar( void )
 {
 }
 
-Skini :: ~Skini()
+void Sitar :: clear( void )
 {
+  delayLine_.clear();
+  loopFilter_.clear();
 }
 
-bool Skini :: setFile( std::string fileName )
+void Sitar :: setFrequency( StkFloat frequency )
 {
-  if ( file_.is_open() ) {
-    oStream_ << "Skini::setFile: already reaading a file!";
-    handleError( StkError::WARNING );
-    return false;
+#if defined(_STK_DEBUG_)
+  if ( frequency <= 0.0 ) {
+    oStream_ << "Sitar::setFrequency: parameter is less than or equal to zero!";
+    handleError( StkError::WARNING ); return;
   }
+#endif
 
-  file_.open( fileName.c_str() );
-  if ( !file_ ) {
-    oStream_ << "Skini::setFile: unable to open file (" << fileName << ")";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  return true;
+  targetDelay_ = (Stk::sampleRate() / frequency);
+  delay_ = targetDelay_ * (1.0 + (0.05 * noise_.tick()));
+  delayLine_.setDelay( delay_ );
+  loopGain_ = 0.995 + (frequency * 0.0000005);
+  if ( loopGain_ > 0.9995 ) loopGain_ = 0.9995;
 }
 
-long Skini :: nextMessage( Message& message )
+void Sitar :: pluck( StkFloat amplitude )
 {
-  if ( !file_.is_open() ) return 0;
-
-  std::string line;
-  bool done = false;
-  while ( !done ) {
-
-    // Read a line from the file and skip over invalid messages.
-    if ( std::getline( file_, line ).eof() ) {
-      oStream_ << "// End of Score.  Thanks for using SKINI!!";
-      handleError( StkError::STATUS );
-      file_.close();
-      message.type = 0;
-      done = true;
-    }
-    else if ( parseString( line, message ) > 0 ) done = true;
-  }
-
-  return message.type;  
+  envelope_.keyOn();
 }
 
-void Skini :: tokenize( const std::string&        str,
-                        std::vector<std::string>& tokens,
-                        const std::string&        delimiters )
+void Sitar :: noteOn( StkFloat frequency, StkFloat amplitude )
 {
-  // Skip delimiters at beginning.
-  std::string::size_type lastPos = str.find_first_not_of(delimiters, 0);
-  // Find first "non-delimiter".
-  std::string::size_type pos     = str.find_first_of(delimiters, lastPos);
-
-  while (std::string::npos != pos || std::string::npos != lastPos) {
-    // Found a token, add it to the vector.
-    tokens.push_back(str.substr(lastPos, pos - lastPos));
-    // Skip delimiters.  Note the "not_of"
-    lastPos = str.find_first_not_of(delimiters, pos);
-    // Find next "non-delimiter"
-    pos = str.find_first_of(delimiters, lastPos);
-  }
-} 
-
-long Skini :: parseString( std::string& line, Message& message )
-{
-  message.type = 0;
-  if ( line.empty() ) return message.type;
-
-  // Check for comment lines.
-  std::string::size_type lastPos = line.find_first_not_of(" ,\t", 0);
-  std::string::size_type pos     = line.find_first_of("/", lastPos);
-  if ( std::string::npos != pos ) {
-    oStream_ << "// Comment Line: " << line;
-    handleError( StkError::STATUS );
-    return message.type;
-  }
-
-  // Tokenize the string.
-  std::vector<std::string> tokens; 
-  this->tokenize( line, tokens, " ,\t");
-
-  // Valid SKINI messages must have at least three fields (type, time,
-  // and channel).
-  if ( tokens.size() < 3 ) return message.type;
-
-  // Determine message type.
-  int iSkini = 0;
-  while ( iSkini < __SK_MaxMsgTypes_ ) {
-    if ( tokens[0] == skini_msgs[iSkini].messageString ) break;
-    iSkini++;
-  }
-
-  if ( iSkini >= __SK_MaxMsgTypes_ )  {
-    oStream_ << "Skini::parseString: couldn't parse this line:\n   " << line;
-    handleError( StkError::WARNING );
-    return message.type;
-  }
-  
-  // Found the type.
-  message.type = skini_msgs[iSkini].type;
-
-  // Parse time field.
-  if ( tokens[1][0] == '=' ) {
-    tokens[1].erase( tokens[1].begin() );
-    if ( tokens[1].empty() ) {
-      oStream_ << "Skini::parseString: couldn't parse time field in line:\n   " << line;
-      handleError( StkError::WARNING );
-      return message.type = 0;
-    }
-    message.time = (StkFloat) -atof( tokens[1].c_str() );
-  }
-  else
-    message.time = (StkFloat) atof( tokens[1].c_str() );
-
-  // Parse the channel field.
-  message.channel = atoi( tokens[2].c_str() );
-
-  // Parse the remaining fields (maximum of 2 more).
-  int iValue = 0;
-  unsigned int iToken = iValue + 3; //rgh: MIDI extension argument counts are different from regular MIDI
-  long dataType = skini_msgs[iSkini].data2;
-  while ( dataType != NOPE ) {
-
-//    if ( tokens.size() <= (unsigned int) (iValue+3) ) { //rgh: test iToken rather than always testing iValue+3
-//    if (tokens.size() <= iToken) { //rgh: iToken only tests it more tokens are to be consumed (SK_INT, SK_DBL, SK_STR)
-	  if ((tokens.size() <= iToken) && (dataType < 0))  { //Don't fail if remaining iValues come from skini_msgs[] rather than tokens[].
-      oStream_ <<  "Skini::parseString: inconsistency between type table and parsed line:\n   " << line;
-      handleError( StkError::WARNING );
-      return message.type = 0;
-    }
-
-    switch ( dataType ) {
-
-    case SK_INT:
-      message.intValues[iValue] = atoi( tokens[iToken].c_str() ); //rgh: use new index
-      message.floatValues[iValue] = (StkFloat) message.intValues[iValue];
-      ++iToken; //rgh: increment token index and value index (below)
-      break;
-
-    case SK_DBL:
-      message.floatValues[iValue] = atof( tokens[iToken].c_str() ); //rgh: use new index
-      message.intValues[iValue] = (long) message.floatValues[iValue];
-      ++iToken; //rgh: increment token index and value index (below)
-      break;
-
-    case SK_STR: // Must be the last field.
-      message.remainder = tokens[iToken]; //rgh: use new index
-      return message.type;
-
-    default: // MIDI extension message
-      message.intValues[iValue] = dataType;
-      message.floatValues[iValue] = (StkFloat) message.intValues[iValue];
-      //iValue--; //rgh: iValue must increment even when iToken does not; resetting iValue only works sometimes
-    }
-
-    if ( ++iValue == 1 )
-      dataType = skini_msgs[iSkini].data3;
-    else
-      dataType = NOPE;
-  }
-
-  return message.type;
+  this->setFrequency( frequency );
+  this->pluck( amplitude );
+  amGain_ = 0.1 * amplitude;
 }
 
-std::string Skini :: whatsThisType(long type)
+void Sitar :: noteOff( StkFloat amplitude )
 {
-  std::string typeString;
-
-  for ( int i=0; i<__SK_MaxMsgTypes_; i++ ) {
-    if ( type == skini_msgs[i].type ) {
-      typeString = skini_msgs[i].messageString;
-      break;
-    }
+  if ( amplitude < 0.0 || amplitude > 1.0 ) {
+    oStream_ << "Sitar::noteOff: amplitude is out of range!";
+    handleError( StkError::WARNING ); return;
   }
-  return typeString;
-}
 
-std::string Skini :: whatsThisController( long number )
-{
-  std::string controller;
-
-  for ( int i=0; i<__SK_MaxMsgTypes_; i++) {
-    if ( skini_msgs[i].type == __SK_ControlChange_ &&
-         number == skini_msgs[i].data2) {
-      controller = skini_msgs[i].messageString;
-      break;
-    }
-  }
-  return controller;
+  loopGain_ = (StkFloat) 1.0 - amplitude;
 }
 
 } // stk namespace

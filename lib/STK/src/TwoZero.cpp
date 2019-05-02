@@ -1,110 +1,74 @@
 /***************************************************/
-/*! \class UdpSocket
-    \brief STK UDP socket server/client class.
+/*! \class TwoZero
+    \brief STK two-zero filter class.
 
-    This class provides a uniform cross-platform UDP socket
-    server/client interface.  Methods are provided for reading or
-    writing data buffers.  The constructor creates a UDP socket and
-    binds it to the specified port.  Note that only one socket can be
-    bound to a given port on the same machine.
+    This class implements a two-zero digital filter.  A method is
+    provided for creating a "notch" in the frequency response while
+    maintaining a constant filter gain.
 
-    UDP sockets provide unreliable, connection-less service.  Messages
-    can be lost, duplicated, or received out of order.  That said,
-    data transmission tends to be faster than with TCP connections and
-    datagrams are not potentially combined by the underlying system.
-
-    The user is responsible for checking the values returned by the
-    read/write methods.  Values less than or equal to zero indicate
-    the occurence of an error.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "UdpSocket.h"
-#include <cstring>
-#include <sstream>
+#include "TwoZero.h"
+#include <cmath>
 
 namespace stk {
 
-UdpSocket :: UdpSocket(int port )
+TwoZero :: TwoZero( void )
 {
-  validAddress_ = false;
+  b_.resize( 3, 0.0 );
+  inputs_.resize( 3, 1, 0.0 );
+  b_[0] = 1.0;
 
-#if defined(__OS_WINDOWS__)  // windoze-only stuff
-  WSADATA wsaData;
-  WORD wVersionRequested = MAKEWORD(1,1);
+  Stk::addSampleRateAlert( this );
+}
 
-  WSAStartup(wVersionRequested, &wsaData);
-  if (wsaData.wVersion != wVersionRequested) {
-    oStream_ << "UdpSocket: Incompatible Windows socket library version!";
-    handleError( StkError::PROCESS_SOCKET );
+TwoZero :: ~TwoZero()
+{
+  Stk::removeSampleRateAlert( this );
+}
+
+void TwoZero :: sampleRateChanged( StkFloat newRate, StkFloat oldRate )
+{
+  if ( !ignoreSampleRateChange_ ) {
+    oStream_ << "TwoZero::sampleRateChanged: you may need to recompute filter coefficients!";
+    handleError( StkError::WARNING );
+  }
+}
+
+void TwoZero :: setCoefficients( StkFloat b0, StkFloat b1, StkFloat b2, bool clearState )
+{
+  b_[0] = b0;
+  b_[1] = b1;
+  b_[2] = b2;
+
+  if ( clearState ) this->clear();
+}
+
+void TwoZero :: setNotch( StkFloat frequency, StkFloat radius )
+{
+#if defined(_STK_DEBUG_)
+  if ( frequency < 0.0 || frequency > 0.5 * Stk::sampleRate() ) {
+    oStream_ << "TwoZero::setNotch: frequency argument (" << frequency << ") is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+  if ( radius < 0.0 ) {
+    oStream_ << "TwoZero::setNotch: radius argument (" << radius << ") is negative!";
+    handleError( StkError::WARNING ); return;
   }
 #endif
 
-  // Create the UDP socket
-  soket_ = ::socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-  if ( soket_ < 0 ) {
-    oStream_ << "UdpSocket: Couldn't create UDP socket!";
-    handleError( StkError::PROCESS_SOCKET );
-  }
+  b_[2] = radius * radius;
+  b_[1] = -2.0 * radius * cos(TWO_PI * frequency / Stk::sampleRate());
 
-  struct sockaddr_in address;
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons( port );
-
-  // Bind socket to the appropriate port and interface (INADDR_ANY)
-  if ( bind(soket_, (struct sockaddr *)&address, sizeof(address)) < 0 ) {
-    oStream_ << "UdpSocket: Couldn't bind socket in constructor!";
-    handleError( StkError::PROCESS_SOCKET );
-  }
-
-  port_ = port;
-}
-
-UdpSocket :: ~UdpSocket()
-{
-}
-
-void UdpSocket :: setDestination( int port, std::string hostname )
-{
-  this->setAddress( &address_, port, hostname );
-  validAddress_ = true;
-}
-
-void UdpSocket :: setAddress( struct sockaddr_in *address, int port, std::string hostname )
-{
-  struct hostent *hostp;
-  if ( (hostp = gethostbyname( hostname.c_str() )) == 0 ) {
-    oStream_ << "UdpSocket::setAddress: unknown host (" << hostname << ")!";
-    handleError( StkError::PROCESS_SOCKET_IPADDR );
-  }
-
-  // Fill in the address structure
-  address->sin_family = AF_INET;
-  memcpy((void *)&address->sin_addr, hostp->h_addr, hostp->h_length);
-  address->sin_port = htons( port );
-}
-
-int UdpSocket :: writeBuffer( const void *buffer, long bufferSize, int flags )
-{
-  if ( !isValid( soket_ ) || !validAddress_ ) return -1;
-  return sendto( soket_, (const char *)buffer, bufferSize, flags, (struct sockaddr *)&address_, sizeof(address_) );
-}
-
-int UdpSocket :: readBuffer( void *buffer, long bufferSize, int flags )
-{
-  if ( !isValid( soket_ ) ) return -1;
-  return recvfrom( soket_, (char *)buffer, bufferSize, flags, NULL, NULL );
-}
-
-int UdpSocket :: writeBufferTo( const void *buffer, long bufferSize, int port, std::string hostname, int flags )
-{
-  if ( !isValid( soket_ ) ) return -1;
-  struct sockaddr_in address;
-  this->setAddress( &address, port, hostname );
-  return sendto( soket_, (const char *)buffer, bufferSize, flags, (struct sockaddr *)&address, sizeof(address) );
+  // Normalize the filter gain.
+  if ( b_[1] > 0.0 ) // Maximum at z = 0.
+    b_[0] = 1.0 / ( 1.0 + b_[1] + b_[2] );
+  else            // Maximum at z = -1.
+    b_[0] = 1.0 / ( 1.0 - b_[1] + b_[2] );
+  b_[1] *= b_[0];
+  b_[2] *= b_[0];
 }
 
 } // stk namespace

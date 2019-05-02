@@ -1,73 +1,98 @@
 /***************************************************/
-/*! \class PoleZero
-    \brief STK one-pole, one-zero filter class.
+/*! \class Plucked
+    \brief STK basic plucked string class.
 
-    This class implements a one-pole, one-zero digital filter.  A
-    method is provided for creating an allpass filter with a given
-    coefficient.  Another method is provided to create a DC blocking
-    filter.
+    This class implements a simple plucked string
+    physical model based on the Karplus-Strong
+    algorithm.
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    For a more advanced plucked string implementation,
+    see the stk::Twang class.
+
+    This is a digital waveguide model, making its
+    use possibly subject to patents held by
+    Stanford University, Yamaha, and others.
+    There exist at least two patents, assigned to
+    Stanford, bearing the names of Karplus and/or
+    Strong.
+
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "PoleZero.h"
+#include "Plucked.h"
 
 namespace stk {
 
-PoleZero :: PoleZero()
+Plucked :: Plucked( StkFloat lowestFrequency )
 {
-  // Default setting for pass-through.
-  b_.resize( 2, 0.0 );
-  a_.resize( 2, 0.0 );
-  b_[0] = 1.0;
-  a_[0] = 1.0;
-  inputs_.resize( 2, 1, 0.0 );
-  outputs_.resize( 2, 1, 0.0 );
+  if ( lowestFrequency <= 0.0 ) {
+    oStream_ << "Plucked::Plucked: argument is less than or equal to zero!";
+    handleError( StkError::FUNCTION_ARGUMENT );
+  }
+
+  unsigned long delays = (unsigned long) ( Stk::sampleRate() / lowestFrequency );
+  delayLine_.setMaximumDelay( delays + 1 );
+
+  this->setFrequency( 220.0 );
 }
 
-PoleZero :: ~PoleZero()
+Plucked :: ~Plucked( void )
 {
 }
 
-void PoleZero :: setCoefficients( StkFloat b0, StkFloat b1, StkFloat a1, bool clearState )
+void Plucked :: clear( void )
 {
-  if ( std::abs( a1 ) >= 1.0 ) {
-    oStream_ << "PoleZero::setCoefficients: a1 argument (" << a1 << ") should be less than 1.0!";
+  delayLine_.clear();
+  loopFilter_.clear();
+  pickFilter_.clear();
+}
+
+void Plucked :: setFrequency( StkFloat frequency )
+{
+#if defined(_STK_DEBUG_)
+  if ( frequency <= 0.0 ) {
+    oStream_ << "Plucked::setFrequency: argument is less than or equal to zero!";
+    handleError( StkError::WARNING ); return;
+  }
+#endif
+
+  // Delay = length - filter delay.
+  StkFloat delay = ( Stk::sampleRate() / frequency ) - loopFilter_.phaseDelay( frequency );
+  delayLine_.setDelay( delay );
+
+  loopGain_ = 0.995 + (frequency * 0.000005);
+  if ( loopGain_ >= 1.0 ) loopGain_ = 0.99999;
+}
+
+void Plucked :: pluck( StkFloat amplitude )
+{
+  if ( amplitude < 0.0 || amplitude > 1.0 ) {
+    oStream_ << "Plucked::pluck: amplitude is out of range!";
     handleError( StkError::WARNING ); return;
   }
 
-  b_[0] = b0;
-  b_[1] = b1;
-  a_[1] = a1;
-
-  if ( clearState ) this->clear();
+  pickFilter_.setPole( 0.999 - (amplitude * 0.15) );
+  pickFilter_.setGain( amplitude * 0.5 );
+  for ( unsigned long i=0; i<delayLine_.getDelay(); i++ )
+    // Fill delay with noise additively with current contents.
+    delayLine_.tick( 0.6 * delayLine_.lastOut() + pickFilter_.tick( noise_.tick() ) );
 }
 
-void PoleZero :: setAllpass( StkFloat coefficient )
+void Plucked :: noteOn( StkFloat frequency, StkFloat amplitude )
 {
-  if ( std::abs( coefficient ) >= 1.0 ) {
-    oStream_ << "PoleZero::setAllpass: argument (" << coefficient << ") makes filter unstable!";
+  this->setFrequency( frequency );
+  this->pluck( amplitude );
+}
+
+void Plucked :: noteOff( StkFloat amplitude )
+{
+  if ( amplitude < 0.0 || amplitude > 1.0 ) {
+    oStream_ << "Plucked::noteOff: amplitude is out of range!";
     handleError( StkError::WARNING ); return;
   }
 
-  b_[0] = coefficient;
-  b_[1] = 1.0;
-  a_[0] = 1.0; // just in case
-  a_[1] = coefficient;
-}
-
-void PoleZero :: setBlockZero( StkFloat thePole )
-{
-  if ( std::abs( thePole ) >= 1.0 ) {
-    oStream_ << "PoleZero::setBlockZero: argument (" << thePole << ") makes filter unstable!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  b_[0] = 1.0;
-  b_[1] = -1.0;
-  a_[0] = 1.0; // just in case
-  a_[1] = -thePole;
+  loopGain_ = 1.0 - amplitude;
 }
 
 } // stk namespace

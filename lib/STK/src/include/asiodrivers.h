@@ -3,18 +3,16 @@
 
 #include "ginclude.h"
 
-#if WINDOWS
-#include <windows.h>
-#include "asiolist.h"
-
-class AsioDrivers : public AsioDriverList
-
-#elif MAC
+#if MAC
 #include "CodeFragments.hpp"
 
 class AsioDrivers : public CodeFragments
 
+#elif WINDOWS
+#include <windows.h>
+#include "asiolist.h"
 
+class AsioDrivers : public AsioDriverList
 
 #elif SGI || BEOS
 #include "asiolist.h"

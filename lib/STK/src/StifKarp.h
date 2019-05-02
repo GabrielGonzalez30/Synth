@@ -29,7 +29,7 @@ namespace stk {
        - String Sustain = 11
        - String Stretch = 1
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
@@ -37,7 +37,7 @@ class StifKarp : public Instrmnt
 {
  public:
   //! Class constructor, taking the lowest desired playing frequency.
-  StifKarp( StkFloat lowestFrequency = 8.0 );
+  StifKarp( StkFloat lowestFrequency = 10.0 );
 
   //! Class destructor.
   ~StifKarp( void );
@@ -95,7 +95,6 @@ class StifKarp : public Instrmnt
   Noise   noise_;
   BiQuad  biquad_[4];
 
-  unsigned long length_;
   StkFloat loopGain_;
   StkFloat baseLoopGain_;
   StkFloat lastFrequency_;

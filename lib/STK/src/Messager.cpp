@@ -1,353 +1,435 @@
-/**********************************************************************/
-/*! \class MidiFileIn
-    \brief A standard MIDI file reading/parsing class.
+/***************************************************/
+/*! \class Messager
+    \brief STK input control message parser.
 
-    This class can be used to read events from a standard MIDI file.
-    Event bytes are copied to a C++ vector and must be subsequently
-    interpreted by the user.  The function getNextMidiEvent() skips
-    meta and sysex events, returning only MIDI channel messages.
-    Event delta-times are returned in the form of "ticks" and a
-    function is provided to determine the current "seconds per tick".
-    Tempo changes are internally tracked by the class and reflected in
-    the values returned by the function getTickSeconds().
+    This class reads and parses control messages from a variety of
+    sources, such as a scorefile, MIDI port, socket connection, or
+    stdin.  MIDI messages are retrieved using the RtMidi class.  All
+    other input sources (scorefile, socket, or stdin) are assumed to
+    provide SKINI formatted messages.  This class can be compiled with
+    generic, non-realtime support, in which case only scorefile
+    reading is possible.
 
-    by Gary P. Scavone, 2003 - 2010.
+    The various \e realtime message acquisition mechanisms (from MIDI,
+    socket, or stdin) take place asynchronously, filling the message
+    queue.  A call to popMessage() will pop the next available control
+    message from the queue and return it via the referenced Message
+    structure.  When a \e non-realtime scorefile is set, it is not
+    possible to start reading realtime input messages (from MIDI,
+    socket, or stdin).  Likewise, it is not possible to read from a
+    scorefile when a realtime input mechanism is running.
+
+    When MIDI input is started, input is also automatically read from
+    stdin.  This allows for program termination via the terminal
+    window.  An __SK_Exit_ message is pushed onto the stack whenever
+    an "exit" or "Exit" message is received from stdin or when all
+    socket connections close and no stdin thread is running.
+
+    This class is primarily for use in STK example programs but it is
+    generic enough to work in many other contexts.
+
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
-/**********************************************************************/
+/***************************************************/
 
-#include "MidiFileIn.h"
-#include <cstring>
+#include "Messager.h"
 #include <iostream>
+#include <algorithm>
+#include "SKINImsg.h"
 
 namespace stk {
 
-MidiFileIn :: MidiFileIn( std::string fileName )
-{
-  // Attempt to open the file.
-  file_.open( fileName.c_str(), std::ios::in | std::ios::binary );
-  if ( !file_ ) {
-    oStream_ << "MidiFileIn: error opening or finding file (" <<  fileName << ").";
-    handleError( StkError::FILE_NOT_FOUND );
-  }
+#if defined(__STK_REALTIME__)
 
-  // Parse header info.
-  char chunkType[4];
-  char buffer[4];
-  SINT32 *length;
-  if ( !file_.read( chunkType, 4 ) ) goto error;
-  if ( !file_.read( buffer, 4 ) ) goto error;
-#ifdef __LITTLE_ENDIAN__
-  swap32((unsigned char *)&buffer);
+extern "C" THREAD_RETURN THREAD_TYPE stdinHandler(void * ptr);
+extern "C" THREAD_RETURN THREAD_TYPE socketHandler(void * ptr);
+
+#endif // __STK_REALTIME__
+
+typedef int MessagerSourceType;
+MessagerSourceType STK_FILE   = 0x1;
+MessagerSourceType STK_MIDI   = 0x2;
+MessagerSourceType STK_STDIN   = 0x4;
+MessagerSourceType STK_SOCKET = 0x8;
+
+Messager :: Messager()
+{
+  data_.sources = 0;
+  data_.queueLimit = DEFAULT_QUEUE_LIMIT;
+#if defined(__STK_REALTIME__)
+  data_.socket = 0;
+  data_.midi = 0;
 #endif
-  length = (SINT32 *) &buffer;
-  if ( strncmp( chunkType, "MThd", 4 ) || ( *length != 6 ) ) {
-    oStream_ << "MidiFileIn: file (" <<  fileName << ") does not appear to be a MIDI file!";
-    handleError( StkError::FILE_UNKNOWN_FORMAT );
-  }
+}
 
-  // Read the MIDI file format.
-  SINT16 *data;
-  if ( !file_.read( buffer, 2 ) ) goto error;
-#ifdef __LITTLE_ENDIAN__
-  swap16((unsigned char *)&buffer);
+Messager :: ~Messager()
+{
+  // Clear the queue in case any thread is waiting on its limit.
+#if defined(__STK_REALTIME__)
+  data_.mutex.lock();
 #endif
-  data = (SINT16 *) &buffer;
-  if ( *data < 0 || *data > 2 ) {
-    oStream_ << "MidiFileIn: the file (" <<  fileName << ") format is invalid!";
-    handleError( StkError::FILE_ERROR );
-  }
-  format_ = *data;
+  while ( data_.queue.size() ) data_.queue.pop();
+  data_.sources = 0;
 
-  // Read the number of tracks.
-  if ( !file_.read( buffer, 2 ) ) goto error;
-#ifdef __LITTLE_ENDIAN__
-  swap16((unsigned char *)&buffer);
+#if defined(__STK_REALTIME__)
+  data_.mutex.unlock();
+  if ( data_.socket ) {
+    socketThread_.wait();
+    delete data_.socket;
+  }
+
+  if ( data_.midi ) delete data_.midi;
 #endif
-  if ( format_ == 0 && *data != 1 ) {
-    oStream_ << "MidiFileIn: invalid number of tracks (>1) for a file format = 0!";
-    handleError( StkError::FILE_ERROR );
-  }
-  nTracks_ = *data;
-
-  // Read the beat division.
-  if ( !file_.read( buffer, 2 ) ) goto error;
-#ifdef __LITTLE_ENDIAN__
-  swap16((unsigned char *)&buffer);
-#endif
-  division_ = (int) *data;
-  double tickrate;
-  usingTimeCode_ = false;
-  if ( *data & 0x8000 ) {
-    // Determine ticks per second from time-code formats.
-    signed char tmp = -(*data & 0xFF00)>>8;
-    tickrate = (double) tmp;
-    // If frames per second value is 29, it really should be 29.97.
-    if ( tickrate == 29.0 ) tickrate = 29.97;
-    tickrate *= (*data & 0x00FF);
-    usingTimeCode_ = true;
-  }
-  else {
-    tickrate = (double) (*data & 0x7FFF); // ticks per quarter note
-  }
-
-  // Now locate the track offsets and lengths.  If not using time
-  // code, we can initialize the "tick time" using a default tempo of
-  // 120 beats per minute.  We will then check for tempo meta-events
-  // afterward.
-  unsigned int i;
-  for ( i=0; i<nTracks_; i++ ) {
-    if ( !file_.read( chunkType, 4 ) ) goto error;
-    if ( strncmp( chunkType, "MTrk", 4 ) ) goto error;
-    if ( !file_.read( buffer, 4 ) ) goto error;
-#ifdef __LITTLE_ENDIAN__
-  swap32((unsigned char *)&buffer);
-#endif
-    length = (SINT32 *) &buffer;
-    trackLengths_.push_back( *length );
-    trackOffsets_.push_back( (long) file_.tellg() );
-    trackPointers_.push_back( (long) file_.tellg() );
-    trackStatus_.push_back( 0 );
-    file_.seekg( *length, std::ios_base::cur );
-    if ( usingTimeCode_ ) tickSeconds_.push_back( (double) (1.0 / tickrate) );
-    else tickSeconds_.push_back( (double) (0.5 / tickrate) );
-  }
-
-  // Save the initial tickSeconds parameter.
-  TempoChange tempoEvent;
-  tempoEvent.count = 0;
-  tempoEvent.tickSeconds = tickSeconds_[0];
-  tempoEvents_.push_back( tempoEvent );
-
-  // If format 1 and not using time code, parse and save the tempo map
-  // on track 0.
-  if ( format_ == 1 && !usingTimeCode_ ) {
-    std::vector<unsigned char> event;
-    unsigned long value, count;
-
-    // We need to temporarily change the usingTimeCode_ value here so
-    // that the getNextEvent() function doesn't try to check the tempo
-    // map (which we're creating here).
-    usingTimeCode_ = true;
-    count = getNextEvent( &event, 0 );
-    while ( event.size() ) {
-      if ( ( event.size() == 6 ) && ( event[0] == 0xff ) &&
-           ( event[1] == 0x51 ) && ( event[2] == 0x03 ) ) {
-        tempoEvent.count = count;
-        value = ( event[3] << 16 ) + ( event[4] << 8 ) + event[5];
-        tempoEvent.tickSeconds = (double) (0.000001 * value / tickrate);
-        if ( count > tempoEvents_.back().count )
-          tempoEvents_.push_back( tempoEvent );
-        else
-          tempoEvents_.back() = tempoEvent;
-      }
-      count += getNextEvent( &event, 0 );
-    }
-    rewindTrack( 0 );
-    for ( unsigned int i=0; i<nTracks_; i++ ) {
-      trackCounters_.push_back( 0 );
-      trackTempoIndex_.push_back( 0 );
-    }
-    // Change the time code flag back!
-    usingTimeCode_ = false;
-  }
-
-  return;
-
- error:
-  oStream_ << "MidiFileIn: error reading from file (" <<  fileName << ").";
-  handleError( StkError::FILE_ERROR );
 }
 
-MidiFileIn :: ~MidiFileIn()
+bool Messager :: setScoreFile( const char* filename )
 {
-  // An ifstream object implicitly closes itself during destruction
-  // but we'll make an explicit call to "close" anyway.
-  file_.close(); 
-}
-
-void MidiFileIn :: rewindTrack( unsigned int track )
-{
-  if ( track >= nTracks_ ) {
-    oStream_ << "MidiFileIn::getNextEvent: invalid track argument (" <<  track << ").";
-    handleError( StkError::WARNING ); return;
-  }
-
-  trackPointers_[track] = trackOffsets_[track];
-  trackStatus_[track] = 0;
-  tickSeconds_[track] = tempoEvents_[0].tickSeconds;
-}
-
-double MidiFileIn :: getTickSeconds( unsigned int track )
-{
-  // Return the current tick value in seconds for the given track.
-  if ( track >= nTracks_ ) {
-    oStream_ << "MidiFileIn::getTickSeconds: invalid track argument (" <<  track << ").";
-    handleError( StkError::WARNING ); return 0.0;
-  }
-
-  return tickSeconds_[track];
-}
-
-unsigned long MidiFileIn :: getNextEvent( std::vector<unsigned char> *event, unsigned int track )
-{
-  // Fill the user-provided vector with the next event in the
-  // specified track (default = 0) and return the event delta time in
-  // ticks.  This function assumes that the stored track pointer is
-  // positioned at the start of a track event.  If the track has
-  // reached its end, the event vector size will be zero.
-  //
-  // If we have a format 0 or 2 file and we're not using timecode, we
-  // should check every meta-event for tempo changes and make
-  // appropriate updates to the tickSeconds_ parameter if so.
-  //
-  // If we have a format 1 file and we're not using timecode, keep a
-  // running sum of ticks for each track and update the tickSeconds_
-  // parameter as needed based on the stored tempo map.
-
-  event->clear();
-  if ( track >= nTracks_ ) {
-    oStream_ << "MidiFileIn::getNextEvent: invalid track argument (" <<  track << ").";
-    handleError( StkError::WARNING ); return 0;
-  }
-
-  // Check for the end of the track.
-  if ( (trackPointers_[track] - trackOffsets_[track]) >= trackLengths_[track] )
-    return 0;
-
-  unsigned long ticks = 0, bytes = 0;
-  bool isTempoEvent = false;
-
-  // Read the event delta time.
-  file_.seekg( trackPointers_[track], std::ios_base::beg );
-  if ( !readVariableLength( &ticks ) ) goto error;
-
-  // Parse the event stream to determine the event length.
-  unsigned char c;
-  if ( !file_.read( (char *)&c, 1 ) ) goto error;
-  switch ( c ) {
-
-  case 0xFF: // A Meta-Event
-    unsigned long position;
-    trackStatus_[track] = 0;
-    event->push_back( c );
-    if ( !file_.read( (char *)&c, 1 ) ) goto error;
-    event->push_back( c );
-    if ( format_ != 1 && ( c == 0x51 ) ) isTempoEvent = true;
-    position = (unsigned long)file_.tellg();
-    if ( !readVariableLength( &bytes ) ) goto error;
-    bytes += ( (unsigned long)file_.tellg() - position );
-    file_.seekg( position, std::ios_base::beg );
-    break;
-
-  case 0xF0:
-  case 0xF7: // The start or continuation of a Sysex event
-    trackStatus_[track] = 0;
-    event->push_back( c );
-    position = (unsigned long)file_.tellg();
-    if ( !readVariableLength( &bytes ) ) goto error;
-    bytes += ( (unsigned long)file_.tellg() - position );
-    file_.seekg( position, std::ios_base::beg );
-    break;
-
-  default: // Should be a MIDI channel event
-    if ( c & 0x80 ) { // MIDI status byte
-      if ( c > 0xF0 ) goto error;
-      trackStatus_[track] = c;
-      event->push_back( c );
-      c &= 0xF0;
-      if ( (c == 0xC0) || (c == 0xD0) ) bytes = 1;
-      else bytes = 2;
+  if ( data_.sources ) {
+    if ( data_.sources == STK_FILE ) {
+      oStream_ << "Messager::setScoreFile: already reading a scorefile!";
+      handleError( StkError::WARNING );
     }
-    else if ( trackStatus_[track] & 0x80 ) { // Running status
-      event->push_back( trackStatus_[track] );
-      event->push_back( c );
-      c = trackStatus_[track] & 0xF0;
-      if ( (c != 0xC0) && (c != 0xD0) ) bytes = 1;
+    else {
+      oStream_ << "Messager::setScoreFile: already reading realtime control input ... cannot do scorefile input too!";
+      handleError( StkError::WARNING );
     }
-    else goto error;
-
+    return false;
   }
 
-  // Read the rest of the event into the event vector.
-  unsigned long i;
-  for ( i=0; i<bytes; i++ ) {
-    if ( !file_.read( (char *)&c, 1 ) ) goto error;
-    event->push_back( c );
-  }
-
-  if ( !usingTimeCode_ ) {
-    if ( isTempoEvent ) {
-      // Parse the tempo event and update tickSeconds_[track].
-      double tickrate = (double) (division_ & 0x7FFF);
-      unsigned long value = ( event->at(3) << 16 ) + ( event->at(4) << 8 ) + event->at(5);
-      tickSeconds_[track] = (double) (0.000001 * value / tickrate);
-    }
-
-    if ( format_ == 1 ) {
-      // Update track counter and check the tempo map.
-      trackCounters_[track] += ticks;
-      TempoChange tempoEvent = tempoEvents_[ trackTempoIndex_[track] ];
-      if ( trackCounters_[track] >= tempoEvent.count && trackTempoIndex_[track] < tempoEvents_.size() - 1 ) {
-        trackTempoIndex_[track]++;
-        tickSeconds_[track] = tempoEvent.tickSeconds;
-      }
-    }
-  }
-
-  // Save the current track pointer value.
-  trackPointers_[track] = (long)file_.tellg();
-
-  return ticks;
-
- error:
-  oStream_ << "MidiFileIn::getNextEvent: file read error!";
-  handleError( StkError::FILE_ERROR );
-  return 0;
-}
-
-unsigned long MidiFileIn :: getNextMidiEvent( std::vector<unsigned char> *midiEvent, unsigned int track )
-{
-  // Fill the user-provided vector with the next MIDI event in the
-  // specified track (default = 0) and return the event delta time in
-  // ticks.  Meta-Events preceeding this event are skipped and ignored.
-  if ( track >= nTracks_ ) {
-    oStream_ << "MidiFileIn::getNextMidiEvent: invalid track argument (" <<  track << ").";
-    handleError( StkError::WARNING ); return 0;
-  }
-
-  unsigned long ticks = getNextEvent( midiEvent, track );
-  while ( midiEvent->size() && ( midiEvent->at(0) >= 0xF0 ) ) {
-    //for ( unsigned int i=0; i<midiEvent->size(); i++ )
-      //std::cout << "event byte = " << i << ", value = " << (int)midiEvent->at(i) << std::endl;
-    ticks = getNextEvent( midiEvent, track );
-  }
-
-  //for ( unsigned int i=0; i<midiEvent->size(); i++ )
-    //std::cout << "event byte = " << i << ", value = " << (int)midiEvent->at(i) << std::endl;
-
-  return ticks;
-}
-
-bool MidiFileIn :: readVariableLength( unsigned long *value )
-{
-  // It is assumed that this function is called with the file read
-  // pointer positioned at the start of a variable-length value.  The
-  // function returns "true" if the value is successfully parsed and
-  // "false" otherwise.
-  *value = 0;
-  char c;
-
-  if ( !file_.read( &c, 1 ) ) return false;
-  *value = (unsigned long) c;
-  if ( *value & 0x80 ) {
-    *value &= 0x7f;
-    do {
-      if ( !file_.read( &c, 1 ) ) return false;
-      *value = ( *value << 7 ) + ( c & 0x7f );
-    } while ( c & 0x80 );
-  }
-
+  if ( !data_.skini.setFile( filename ) ) return false;
+  data_.sources = STK_FILE;
   return true;
-} 
+}
+
+void Messager :: popMessage( Skini::Message& message )
+{
+  if ( data_.sources == STK_FILE ) { // scorefile input
+    if ( !data_.skini.nextMessage( message ) )
+      message.type = __SK_Exit_;
+    return;
+  }
+
+  if ( data_.queue.size() == 0 ) {
+    // An empty (or invalid) message is indicated by a type = 0.
+    message.type = 0;
+    return;
+  }
+
+  // Copy queued message to the message pointer structure and then "pop" it.
+#if defined(__STK_REALTIME__)
+  data_.mutex.lock();
+#endif
+  message = data_.queue.front();
+  data_.queue.pop();
+#if defined(__STK_REALTIME__)
+  data_.mutex.unlock();
+#endif
+}
+
+void Messager :: pushMessage( Skini::Message& message )
+{
+#if defined(__STK_REALTIME__)
+  data_.mutex.lock();
+#endif
+  data_.queue.push( message );
+#if defined(__STK_REALTIME__)
+  data_.mutex.unlock();
+#endif
+}
+
+#if defined(__STK_REALTIME__)
+
+bool Messager :: startStdInput()
+{
+  if ( data_.sources == STK_FILE ) {
+    oStream_ << "Messager::startStdInput: already reading a scorefile ... cannot do realtime control input too!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  if ( data_.sources & STK_STDIN ) {
+    oStream_ << "Messager::startStdInput: stdin input thread already started.";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  // Start the stdin input thread.
+  if ( !stdinThread_.start( (THREAD_FUNCTION)&stdinHandler, &data_ ) ) {
+    oStream_ << "Messager::startStdInput: unable to start stdin input thread!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+  data_.sources |= STK_STDIN;
+  return true;
+}
+
+THREAD_RETURN THREAD_TYPE stdinHandler(void *ptr)
+{
+  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
+  Skini::Message message;
+
+  std::string line;
+  while ( !std::getline( std::cin, line).eof() ) {
+    if ( line.empty() ) continue;
+    if ( line.compare(0, 4, "Exit") == 0 || line.compare(0, 4, "exit") == 0 )
+      break;
+
+    data->mutex.lock();
+    if ( data->skini.parseString( line, message ) )
+      data->queue.push( message );
+    data->mutex.unlock();
+
+    while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
+  }
+
+  // We assume here that if someone types an "exit" message in the
+  // terminal window, all processing should stop.
+  message.type = __SK_Exit_;
+  data->queue.push( message );
+  data->sources &= ~STK_STDIN;
+
+  return NULL;
+}
+
+void midiHandler( double timeStamp, std::vector<unsigned char> *bytes, void *ptr )
+{
+  if ( bytes->size() < 2 ) return;
+
+  // Parse the MIDI bytes ... only keep MIDI channel messages.
+  if ( bytes->at(0) > 239 ) return;
+
+  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
+  Skini::Message message;
+
+  message.type = bytes->at(0) & 0xF0;
+  message.channel = bytes->at(0) & 0x0F;
+  message.time = 0.0; // realtime messages should have delta time = 0.0
+  message.intValues[0] = bytes->at(1);
+  message.floatValues[0] = (StkFloat) message.intValues[0];
+  if ( ( message.type != 0xC0 ) && ( message.type != 0xD0 ) ) {
+    if ( bytes->size() < 3 ) return;
+    message.intValues[1] = bytes->at(2);
+    if ( message.type == 0xE0 ) { // combine pithbend into single "14-bit" value
+      message.intValues[0] += message.intValues[1] <<= 7;
+      message.floatValues[0] = (StkFloat) message.intValues[0];
+      message.intValues[1] = 0;
+    }
+    else
+      message.floatValues[1] = (StkFloat) message.intValues[1];
+  }
+
+  while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
+
+  data->mutex.lock();
+  data->queue.push( message );
+  data->mutex.unlock();
+}
+
+bool Messager :: startMidiInput( int port )
+{
+  if ( data_.sources == STK_FILE ) {
+    oStream_ << "Messager::startMidiInput: already reading a scorefile ... cannot do realtime control input too!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  if ( data_.sources & STK_MIDI ) {
+    oStream_ << "Messager::startMidiInput: MIDI input already started.";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  // First start the stdin input thread if it isn't already running
+  // (to allow the user to exit).
+  if ( !( data_.sources & STK_STDIN ) ) {
+    if ( this->startStdInput() == false ) {
+      oStream_ << "Messager::startMidiInput: unable to start input from stdin.";
+      handleError( StkError::WARNING );
+      return false;
+    }
+  }
+
+  try {
+    data_.midi = new RtMidiIn();
+    data_.midi->setCallback( &midiHandler, (void *) &data_ );
+    if ( port == -1 ) data_.midi->openVirtualPort();
+    else data_.midi->openPort( (unsigned int)port );
+  }
+  catch ( RtMidiError &error ) {
+    oStream_ << "Messager::startMidiInput: error creating RtMidiIn instance (" << error.getMessage() << ").";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  data_.sources |= STK_MIDI;
+  return true;
+}
+
+bool Messager :: startSocketInput( int port )
+{
+  if ( data_.sources == STK_FILE ) {
+    oStream_ << "Messager::startSocketInput: already reading a scorefile ... cannot do realtime control input too!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  if ( data_.sources & STK_SOCKET ) {
+    oStream_ << "Messager::startSocketInput: socket input thread already started.";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  // Create the socket server.
+  try {
+    data_.socket = new TcpServer( port );
+  }
+  catch ( StkError& ) {
+    return false;
+  }
+
+  oStream_ << "Socket server listening for connection(s) on port " << port << "...";
+  handleError( StkError::STATUS );
+
+  // Initialize socket descriptor information.
+  FD_ZERO(&data_.mask);
+  int fd = data_.socket->id();
+  FD_SET( fd, &data_.mask );
+  data_.fd.push_back( fd );
+
+  // Start the socket thread.
+  if ( !socketThread_.start( (THREAD_FUNCTION)&socketHandler, &data_ ) ) {
+    oStream_ << "Messager::startSocketInput: unable to start socket input thread!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+  data_.sources |= STK_SOCKET;
+  return true;
+}
+
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+  #include <sys/time.h>
+  #include <errno.h>
+#endif
+
+THREAD_RETURN THREAD_TYPE socketHandler(void *ptr)
+{
+  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
+  Skini::Message message;
+  std::vector<int>& fd = data->fd;
+
+  struct timeval timeout;
+  fd_set rmask;
+  int newfd;
+  unsigned int i;
+  const int bufferSize = 1024;
+  char buffer[bufferSize];
+  int index = 0, bytesRead = 0;
+  std::string line;
+  std::vector<int> fdclose;
+
+  while ( data->sources & STK_SOCKET ) {
+
+    // Use select function to periodically poll socket desriptors.
+    rmask = data->mask;
+    timeout.tv_sec = 0; timeout.tv_usec = 50000; // 50 milliseconds
+    if ( select( fd.back()+1, &rmask, (fd_set *)0, (fd_set *)0, &timeout ) <= 0 ) continue;
+
+    // A file descriptor is set.  Check if there's a new socket connection available.
+    if ( FD_ISSET( data->socket->id(), &rmask ) ) {
+
+      // Accept and service new connection.
+      newfd = data->socket->accept();
+      if ( newfd >= 0 ) {
+        std::cout << "New socket connection made.\n" << std::endl;
+
+        // Set the socket to non-blocking mode.
+        Socket::setBlocking( newfd, false );
+
+        // Save the descriptor and update the masks.
+        fd.push_back( newfd );
+        std::sort( fd.begin(), data->fd.end() );
+        FD_SET( newfd, &data->mask );
+        FD_CLR( data->socket->id(), &rmask );
+      }
+      else
+        std::cerr << "Messager: Couldn't accept connection request!\n";
+    }
+
+    // Check the other descriptors.
+    for ( i=0; i<fd.size(); i++ ) {
+
+      if ( !FD_ISSET( fd[i], &rmask ) ) continue;
+
+      // This connection has data.  Read and parse it.
+      bytesRead = 0;
+      index = 0;
+#if ( defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__) )
+      errno = 0;
+      while (bytesRead != -1 && errno != EAGAIN) {
+#elif defined(__OS_WINDOWS__)
+      while (bytesRead != SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK) {
+#endif
+
+        while ( index < bytesRead ) {
+          line += buffer[index];
+          if ( buffer[index++] == '\n' ) {
+            data->mutex.lock();
+            if ( line.compare(0, 4, "Exit") == 0 || line.compare(0, 4, "exit") == 0 ) {
+              // Ignore this line and assume the connection will be
+              // closed on a subsequent read call.
+              ;
+            }
+            else if ( data->skini.parseString( line, message ) )
+              data->queue.push( message );
+            data->mutex.unlock();
+            line.erase();
+          }
+        }
+        index = 0;
+
+        bytesRead = Socket::readBuffer(fd[i], buffer, bufferSize, 0);
+        if (bytesRead == 0) {
+          // This socket connection closed.
+          FD_CLR( fd[i], &data->mask );
+          Socket::close( fd[i] );
+          fdclose.push_back( fd[i] );
+        }
+      }
+    }
+
+    // Now remove descriptors for closed connections.
+    for ( i=0; i<fdclose.size(); i++ ) {
+      for ( unsigned int j=0; j<fd.size(); j++ ) {
+        if ( fd[j] == fdclose[i] ) {
+          fd.erase( fd.begin() + j );
+          break;
+        }
+      }
+
+      // Check to see whether all connections are closed.  Note that
+      // the server descriptor will always remain.
+      if ( fd.size() == 1 ) {
+        data->sources &= ~STK_SOCKET;
+        if ( data->sources & STK_MIDI )
+          std::cout << "MIDI input still running ... type 'exit<cr>' to quit.\n" << std::endl;
+        else if ( !(data->sources & STK_STDIN) ) {
+          // No stdin thread running, so quit now.
+          message.type = __SK_Exit_;
+          data->queue.push( message );
+        }
+      }
+      fdclose.clear();
+    }
+
+    // Wait until we're below the queue limit.
+    while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
+  }
+
+  return NULL;
+}
+
+#endif
 
 } // stk namespace
+

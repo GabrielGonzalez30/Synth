@@ -1,119 +1,104 @@
 /***************************************************/
-/*! \class NRev
-    \brief CCRMA's NRev reverberator class.
+/*! \class Mutex
+    \brief STK mutex class.
 
-    This class takes a monophonic input signal and produces a stereo
-    output signal.  It is derived from the CLM NRev function, which is
-    based on the use of networks of simple allpass and comb delay
-    filters.  This particular arrangement consists of 6 comb filters
-    in parallel, followed by 3 allpass filters, a lowpass filter, and
-    another allpass in series, followed by two allpass filters in
-    parallel with corresponding right and left outputs.
+    This class provides a uniform interface for
+    cross-platform mutex use.  On Linux and IRIX
+    systems, the pthread library is used. Under
+    Windows, critical sections are used.
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "NRev.h"
-#include <cmath>
+#include "Mutex.h"
 
 namespace stk {
 
-NRev :: NRev( StkFloat T60 )
+Mutex :: Mutex()
 {
-  if ( T60 <= 0.0 ) {
-    oStream_ << "NRev::NRev: argument (" << T60 << ") must be positive!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
 
-  lastFrame_.resize( 1, 2, 0.0 ); // resize lastFrame_ for stereo output
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
 
-  int lengths[15] = {1433, 1601, 1867, 2053, 2251, 2399, 347, 113, 37, 59, 53, 43, 37, 29, 19};
-  double scaler = Stk::sampleRate() / 25641.0;
+  pthread_mutex_init(&mutex_, NULL);
+  pthread_cond_init(&condition_, NULL);
 
-  int delay, i;
-  for ( i=0; i<15; i++ ) {
-    delay = (int) floor(scaler * lengths[i]);
-    if ( (delay & 1) == 0) delay++;
-    while ( !this->isPrime(delay) ) delay += 2;
-    lengths[i] = delay;
-  }
+#elif defined(__OS_WINDOWS__)
 
-  for ( i=0; i<6; i++ ) {
-    combDelays_[i].setMaximumDelay( lengths[i] );
-    combDelays_[i].setDelay( lengths[i] );
-    combCoefficient_[i] = pow(10.0, (-3 * lengths[i] / (T60 * Stk::sampleRate())));
-  }
+  InitializeCriticalSection(&mutex_);
+  condition_ = CreateEvent(NULL,  // no security
+                           true,  // manual-reset
+                           false, // non-signaled initially
+                           NULL); // unnamed
 
-  for ( i=0; i<8; i++ ) {
-	  allpassDelays_[i].setMaximumDelay( lengths[i+6] );
-	  allpassDelays_[i].setDelay( lengths[i+6] );
-  }
-
-  this->setT60( T60 );
-  allpassCoefficient_ = 0.7;
-  effectMix_ = 0.3;
-  this->clear();
+#endif 
 }
 
-void NRev :: clear()
+Mutex :: ~Mutex()
 {
-  int i;
-  for (i=0; i<6; i++) combDelays_[i].clear();
-  for (i=0; i<8; i++) allpassDelays_[i].clear();
-  lastFrame_[0] = 0.0;
-  lastFrame_[1] = 0.0;
-  lowpassState_ = 0.0;
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  pthread_mutex_destroy(&mutex_);
+  pthread_cond_destroy(&condition_);
+
+#elif defined(__OS_WINDOWS__)
+
+  DeleteCriticalSection(&mutex_);
+  CloseHandle( condition_ );
+
+#endif 
 }
 
-void NRev :: setT60( StkFloat T60 )
+void Mutex :: lock()
 {
-  if ( T60 <= 0.0 ) {
-    oStream_ << "NRev::setT60: argument (" << T60 << ") must be positive!";
-    handleError( StkError::WARNING ); return;
-  }
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
 
-  for ( int i=0; i<6; i++ )
-    combCoefficient_[i] = pow(10.0, (-3.0 * combDelays_[i].getDelay() / (T60 * Stk::sampleRate())));
+  pthread_mutex_lock(&mutex_);
+
+#elif defined(__OS_WINDOWS__)
+
+  EnterCriticalSection(&mutex_);
+
+#endif 
 }
 
-StkFrames& NRev :: tick( StkFrames& frames, unsigned int channel )
+void Mutex :: unlock()
 {
-#if defined(_STK_DEBUG_)
-  if ( channel >= frames.channels() - 1 ) {
-    oStream_ << "NRev::tick(): channel and StkFrames arguments are incompatible!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
-#endif
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
 
-  StkFloat *samples = &frames[channel];
-  unsigned int hop = frames.channels();
-  for ( unsigned int i=0; i<frames.frames(); i++, samples += hop ) {
-    *samples = tick( *samples );
-    *(samples+1) = lastFrame_[1];
-  }
+  pthread_mutex_unlock(&mutex_);
 
-  return frames;
+#elif defined(__OS_WINDOWS__)
+
+  LeaveCriticalSection(&mutex_);
+
+#endif 
 }
 
-StkFrames& NRev :: tick( StkFrames& iFrames, StkFrames& oFrames, unsigned int iChannel, unsigned int oChannel )
+void Mutex :: wait()
 {
-#if defined(_STK_DEBUG_)
-  if ( iChannel >= iFrames.channels() || oChannel >= oFrames.channels() - 1 ) {
-    oStream_ << "NRev::tick(): channel and StkFrames arguments are incompatible!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
-#endif
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
 
-  StkFloat *iSamples = &iFrames[iChannel];
-  StkFloat *oSamples = &oFrames[oChannel];
-  unsigned int iHop = iFrames.channels(), oHop = oFrames.channels();
-  for ( unsigned int i=0; i<iFrames.frames(); i++, iSamples += iHop, oSamples += oHop ) {
-    *oSamples = tick( *iSamples );
-    *(oSamples+1) = lastFrame_[1];
-  }
+  pthread_cond_wait(&condition_, &mutex_);
 
-  return iFrames;
+#elif defined(__OS_WINDOWS__)
+
+  WaitForMultipleObjects(1, &condition_, false, INFINITE);
+
+#endif 
+}
+
+void Mutex :: signal()
+{
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  pthread_cond_signal(&condition_);
+
+#elif defined(__OS_WINDOWS__)
+
+  SetEvent( condition_ );
+
+#endif 
 }
 
 } // stk namespace

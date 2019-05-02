@@ -1,50 +1,78 @@
 /***************************************************/
-/*! \class Sphere
-    \brief STK sphere class.
+/*! \class Socket
+    \brief STK internet socket abstract base class.
 
-    This class implements a spherical ball with
-    radius, mass, position, and velocity parameters.
+    This class provides common functionality for TCP and UDP internet
+    socket server and client subclasses.
 
-    by Perry R. Cook, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Sphere.h"
-#include <cmath>
+#include "Socket.h"
 
 namespace stk {
 
-Vector3D* Sphere::getRelativePosition( Vector3D* position )
+Socket :: Socket()
 {
-  workingVector_.setXYZ(position->getX() - position_.getX(),
-                        position->getY() - position_.getY(),  
-                        position->getZ() - position_.getZ());
-  return &workingVector_;
-};
+  soket_ = -1;
+  port_ = -1;
+}
 
-StkFloat Sphere::getVelocity( Vector3D* velocity )
+Socket :: ~Socket()
 {
-  velocity->setXYZ( velocity_.getX(), velocity_.getY(), velocity_.getZ() );
-  return velocity_.getLength();
-};
+  this->close( soket_ );
 
-StkFloat Sphere::isInside( Vector3D *position )
+#if defined(__OS_WINDOWS__)
+
+  WSACleanup();
+
+#endif
+}
+
+void Socket :: close( int socket )
 {
-  // Return directed distance from aPosition to spherical boundary ( <
-  // 0 if inside).
-  StkFloat distance;
-  Vector3D *tempVector;
+  if ( !isValid( socket ) ) return;
 
-  tempVector = this->getRelativePosition( position );
-  distance = tempVector->getLength();
-  return distance - radius_;
-};
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
 
-void Sphere::addVelocity(StkFloat x, StkFloat y, StkFloat z)
+  ::close( socket );
+
+#elif defined(__OS_WINDOWS__)
+
+  ::closesocket( socket );
+
+#endif
+}
+
+void Socket :: setBlocking( int socket, bool enable )
 {
-  velocity_.setX(velocity_.getX() + x);
-  velocity_.setY(velocity_.getY() + y);
-  velocity_.setZ(velocity_.getZ() + z);
+  if ( !isValid( socket ) ) return;
+
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  int tmp = ::fcntl( socket, F_GETFL, 0 );
+  if ( tmp >= 0 )
+    tmp = ::fcntl( socket, F_SETFL, enable ? (tmp &~ O_NONBLOCK) : (tmp | O_NONBLOCK) );
+
+#elif defined(__OS_WINDOWS__)
+
+  unsigned long non_block = !enable;
+  ioctlsocket( socket, FIONBIO, &non_block );
+
+#endif
+}
+
+int Socket :: writeBuffer(int socket, const void *buffer, long bufferSize, int flags )
+{
+  if ( !isValid( socket ) ) return -1;
+  return send( socket, (const char *)buffer, bufferSize, flags );
+}
+
+int Socket :: readBuffer(int socket, void *buffer, long bufferSize, int flags )
+{
+  if ( !isValid( socket ) ) return -1;
+  return recv( socket, (char *)buffer, bufferSize, flags );
 }
 
 } // stk namespace

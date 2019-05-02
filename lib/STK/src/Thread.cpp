@@ -1,78 +1,106 @@
 /***************************************************/
-/*! \class TubeBell
-    \brief STK tubular bell (orchestral chime) FM
-           synthesis instrument.
+/*! \class Thread
+    \brief STK thread class.
 
-    This class implements two simple FM Pairs
-    summed together, also referred to as algorithm
-    5 of the TX81Z.
+    This class provides a uniform interface for cross-platform
+    threads.  On unix systems, the pthread library is used.  Under
+    Windows, the C runtime threadex functions are used.
 
-    \code
-    Algorithm 5 is :  4->3--\
-                             + --> Out
-                      2->1--/
-    \endcode
+    Each instance of the Thread class can be used to control a single
+    thread process.  Routines are provided to signal cancelation
+    and/or joining with a thread, though it is not possible for this
+    class to know the running status of a thread once it is started.
 
-    Control Change Numbers: 
-       - Modulator Index One = 2
-       - Crossfade of Outputs = 4
-       - LFO Speed = 11
-       - LFO Depth = 1
-       - ADSR 2 & 4 Target = 128
+    For cross-platform compatability, thread functions should be
+    declared as follows:
 
-    The basic Chowning/Stanford FM patent expired
-    in 1995, but there exist follow-on patents,
-    mostly assigned to Yamaha.  If you are of the
-    type who should worry about this (making
-    money) worry away.
+    THREAD_RETURN THREAD_TYPE thread_function(void *ptr)
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "TubeBell.h"
+#include "Thread.h"
 
 namespace stk {
 
-TubeBell :: TubeBell( void )
-  : FM()
+Thread :: Thread()
 {
-  // Concatenate the STK rawwave path to the rawwave files
-  for ( unsigned int i=0; i<3; i++ )
-    waves_[i] = new FileLoop( (Stk::rawwavePath() + "sinewave.raw").c_str(), true );
-  waves_[3] = new FileLoop( (Stk::rawwavePath() + "fwavblnk.raw").c_str(), true );
+  thread_ = 0;
+}
 
-  this->setRatio(0, 1.0   * 0.995);
-  this->setRatio(1, 1.414 * 0.995);
-  this->setRatio(2, 1.0   * 1.005);
-  this->setRatio(3, 1.414 * 1.000);
-
-  gains_[0] = fmGains_[94];
-  gains_[1] = fmGains_[76];
-  gains_[2] = fmGains_[99];
-  gains_[3] = fmGains_[71];
-
-  adsr_[0]->setAllTimes( 0.005, 4.0, 0.0, 0.04);
-  adsr_[1]->setAllTimes( 0.005, 4.0, 0.0, 0.04);
-  adsr_[2]->setAllTimes( 0.001, 2.0, 0.0, 0.04);
-  adsr_[3]->setAllTimes( 0.004, 4.0, 0.0, 0.04);
-
-  twozero_.setGain( 0.5 );
-  vibrato_.setFrequency( 2.0 );
-}  
-
-TubeBell :: ~TubeBell( void )
+Thread :: ~Thread()
 {
 }
 
-void TubeBell :: noteOn( StkFloat frequency, StkFloat amplitude )
+bool Thread :: start( THREAD_FUNCTION routine, void * ptr )
 {
-  gains_[0] = amplitude * fmGains_[94];
-  gains_[1] = amplitude * fmGains_[76];
-  gains_[2] = amplitude * fmGains_[99];
-  gains_[3] = amplitude * fmGains_[71];
-  this->setFrequency( frequency );
-  this->keyOn();
+  if ( thread_ ) {
+    oStream_ << "Thread:: a thread is already running!";
+    handleError( StkError::WARNING );
+    return false;
+  }
+
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  if ( pthread_create(&thread_, NULL, *routine, ptr) == 0 )
+    return true;
+
+#elif defined(__OS_WINDOWS__)
+  unsigned thread_id;
+  thread_ = _beginthreadex(NULL, 0, routine, ptr, 0, &thread_id);
+  if ( thread_ ) return true;
+
+#endif
+  return false;
+}
+
+bool Thread :: cancel()
+{
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  if ( pthread_cancel(thread_) == 0 ) {
+    return true;
+  }
+
+#elif defined(__OS_WINDOWS__)
+
+  TerminateThread((HANDLE)thread_, 0);
+  return true;
+
+#endif
+  return false;
+}
+
+bool Thread :: wait()
+{
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  if ( pthread_join(thread_, NULL) == 0 ) {
+    thread_ = 0;
+    return true;
+  }
+
+#elif defined(__OS_WINDOWS__)
+
+  long retval = WaitForSingleObject( (HANDLE)thread_, INFINITE );
+  if ( retval == WAIT_OBJECT_0 ) {
+    CloseHandle( (HANDLE)thread_ );
+    thread_ = 0;
+    return true;
+  }
+
+#endif
+  return false;
+}
+
+void Thread :: testCancel(void)
+{
+#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+
+  pthread_testcancel();
+
+#endif
 }
 
 } // stk namespace

@@ -1,435 +1,367 @@
 /***************************************************/
-/*! \class Messager
-    \brief STK input control message parser.
+/*! \class Mesh2D
+    \brief Two-dimensional rectilinear waveguide mesh class.
 
-    This class reads and parses control messages from a variety of
-    sources, such as a scorefile, MIDI port, socket connection, or
-    stdin.  MIDI messages are retrieved using the RtMidi class.  All
-    other input sources (scorefile, socket, or stdin) are assumed to
-    provide SKINI formatted messages.  This class can be compiled with
-    generic, non-realtime support, in which case only scorefile
-    reading is possible.
+    This class implements a rectilinear,
+    two-dimensional digital waveguide mesh
+    structure.  For details, see Van Duyne and
+    Smith, "Physical Modeling with the 2-D Digital
+    Waveguide Mesh", Proceedings of the 1993
+    International Computer Music Conference.
 
-    The various \e realtime message acquisition mechanisms (from MIDI,
-    socket, or stdin) take place asynchronously, filling the message
-    queue.  A call to popMessage() will pop the next available control
-    message from the queue and return it via the referenced Message
-    structure.  When a \e non-realtime scorefile is set, it is not
-    possible to start reading realtime input messages (from MIDI,
-    socket, or stdin).  Likewise, it is not possible to read from a
-    scorefile when a realtime input mechanism is running.
+    This is a digital waveguide model, making its
+    use possibly subject to patents held by Stanford
+    University, Yamaha, and others.
 
-    When MIDI input is started, input is also automatically read from
-    stdin.  This allows for program termination via the terminal
-    window.  An __SK_Exit_ message is pushed onto the stack whenever
-    an "exit" or "Exit" message is received from stdin or when all
-    socket connections close and no stdin thread is running.
+    Control Change Numbers: 
+       - X Dimension = 2
+       - Y Dimension = 4
+       - Mesh Decay = 11
+       - X-Y Input Position = 1
 
-    This class is primarily for use in STK example programs but it is
-    generic enough to work in many other contexts.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Julius Smith, 2000--2002.
+    Revised by Gary Scavone for STK, 2002.
 */
 /***************************************************/
 
-#include "Messager.h"
-#include <iostream>
-#include <algorithm>
+#include "Mesh2D.h"
 #include "SKINImsg.h"
 
 namespace stk {
 
-#if defined(__STK_REALTIME__)
-
-extern "C" THREAD_RETURN THREAD_TYPE stdinHandler(void * ptr);
-extern "C" THREAD_RETURN THREAD_TYPE socketHandler(void * ptr);
-
-#endif // __STK_REALTIME__
-
-typedef int MessagerSourceType;
-MessagerSourceType STK_FILE   = 0x1;
-MessagerSourceType STK_MIDI   = 0x2;
-MessagerSourceType STK_STDIN   = 0x4;
-MessagerSourceType STK_SOCKET = 0x8;
-
-Messager :: Messager()
+Mesh2D :: Mesh2D( unsigned short nX, unsigned short nY )
 {
-  data_.sources = 0;
-  data_.queueLimit = DEFAULT_QUEUE_LIMIT;
-#if defined(__STK_REALTIME__)
-  data_.socket = 0;
-  data_.midi = 0;
-#endif
+  if ( nX == 0.0 || nY == 0.0 ) {
+    oStream_ << "Mesh2D::Mesh2D: one or more argument is equal to zero!";
+    handleError( StkError::FUNCTION_ARGUMENT );
+  }
+
+  this->setNX( nX );
+  this->setNY( nY );
+
+  StkFloat pole = 0.05;
+  unsigned short i;
+  for ( i=0; i<NYMAX; i++ ) {
+    filterY_[i].setPole( pole );
+    filterY_[i].setGain( 0.99 );
+  }
+
+  for ( i=0; i<NXMAX; i++ ) {
+    filterX_[i].setPole( pole );
+    filterX_[i].setGain( 0.99 );
+  }
+
+  this->clearMesh();
+
+  counter_ = 0;
+  xInput_ = 0;
+  yInput_ = 0;
 }
 
-Messager :: ~Messager()
+Mesh2D :: ~Mesh2D( void )
 {
-  // Clear the queue in case any thread is waiting on its limit.
-#if defined(__STK_REALTIME__)
-  data_.mutex.lock();
-#endif
-  while ( data_.queue.size() ) data_.queue.pop();
-  data_.sources = 0;
-
-#if defined(__STK_REALTIME__)
-  data_.mutex.unlock();
-  if ( data_.socket ) {
-    socketThread_.wait();
-    delete data_.socket;
-  }
-
-  if ( data_.midi ) delete data_.midi;
-#endif
 }
 
-bool Messager :: setScoreFile( const char* filename )
+void Mesh2D :: clear( void )
 {
-  if ( data_.sources ) {
-    if ( data_.sources == STK_FILE ) {
-      oStream_ << "Messager::setScoreFile: already reading a scorefile!";
-      handleError( StkError::WARNING );
-    }
-    else {
-      oStream_ << "Messager::setScoreFile: already reading realtime control input ... cannot do scorefile input too!";
-      handleError( StkError::WARNING );
-    }
-    return false;
-  }
+  this->clearMesh();
 
-  if ( !data_.skini.setFile( filename ) ) return false;
-  data_.sources = STK_FILE;
-  return true;
+  unsigned short i;
+  for ( i=0; i<NY_; i++ )
+    filterY_[i].clear();
+
+  for ( i=0; i<NX_; i++ )
+    filterX_[i].clear();
+
+  counter_ = 0;
 }
 
-void Messager :: popMessage( Skini::Message& message )
+void Mesh2D :: clearMesh( void )
 {
-  if ( data_.sources == STK_FILE ) { // scorefile input
-    if ( !data_.skini.nextMessage( message ) )
-      message.type = __SK_Exit_;
-    return;
-  }
-
-  if ( data_.queue.size() == 0 ) {
-    // An empty (or invalid) message is indicated by a type = 0.
-    message.type = 0;
-    return;
-  }
-
-  // Copy queued message to the message pointer structure and then "pop" it.
-#if defined(__STK_REALTIME__)
-  data_.mutex.lock();
-#endif
-  message = data_.queue.front();
-  data_.queue.pop();
-#if defined(__STK_REALTIME__)
-  data_.mutex.unlock();
-#endif
-}
-
-void Messager :: pushMessage( Skini::Message& message )
-{
-#if defined(__STK_REALTIME__)
-  data_.mutex.lock();
-#endif
-  data_.queue.push( message );
-#if defined(__STK_REALTIME__)
-  data_.mutex.unlock();
-#endif
-}
-
-#if defined(__STK_REALTIME__)
-
-bool Messager :: startStdInput()
-{
-  if ( data_.sources == STK_FILE ) {
-    oStream_ << "Messager::startStdInput: already reading a scorefile ... cannot do realtime control input too!";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  if ( data_.sources & STK_STDIN ) {
-    oStream_ << "Messager::startStdInput: stdin input thread already started.";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  // Start the stdin input thread.
-  if ( !stdinThread_.start( (THREAD_FUNCTION)&stdinHandler, &data_ ) ) {
-    oStream_ << "Messager::startStdInput: unable to start stdin input thread!";
-    handleError( StkError::WARNING );
-    return false;
-  }
-  data_.sources |= STK_STDIN;
-  return true;
-}
-
-THREAD_RETURN THREAD_TYPE stdinHandler(void *ptr)
-{
-  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
-  Skini::Message message;
-
-  std::string line;
-  while ( !std::getline( std::cin, line).eof() ) {
-    if ( line.empty() ) continue;
-    if ( line.compare(0, 4, "Exit") == 0 || line.compare(0, 4, "exit") == 0 )
-      break;
-
-    data->mutex.lock();
-    if ( data->skini.parseString( line, message ) )
-      data->queue.push( message );
-    data->mutex.unlock();
-
-    while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
-  }
-
-  // We assume here that if someone types an "exit" message in the
-  // terminal window, all processing should stop.
-  message.type = __SK_Exit_;
-  data->queue.push( message );
-  data->sources &= ~STK_STDIN;
-
-  return NULL;
-}
-
-void midiHandler( double timeStamp, std::vector<unsigned char> *bytes, void *ptr )
-{
-  if ( bytes->size() < 2 ) return;
-
-  // Parse the MIDI bytes ... only keep MIDI channel messages.
-  if ( bytes->at(0) > 239 ) return;
-
-  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
-  Skini::Message message;
-
-  message.type = bytes->at(0) & 0xF0;
-  message.channel = bytes->at(0) & 0x0F;
-  message.time = 0.0; // realtime messages should have delta time = 0.0
-  message.intValues[0] = bytes->at(1);
-  message.floatValues[0] = (StkFloat) message.intValues[0];
-  if ( ( message.type != 0xC0 ) && ( message.type != 0xD0 ) ) {
-    if ( bytes->size() < 3 ) return;
-    message.intValues[1] = bytes->at(2);
-    if ( message.type == 0xE0 ) { // combine pithbend into single "14-bit" value
-      message.intValues[0] += message.intValues[1] <<= 7;
-      message.floatValues[0] = (StkFloat) message.intValues[0];
-      message.intValues[1] = 0;
-    }
-    else
-      message.floatValues[1] = (StkFloat) message.intValues[1];
-  }
-
-  while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
-
-  data->mutex.lock();
-  data->queue.push( message );
-  data->mutex.unlock();
-}
-
-bool Messager :: startMidiInput( int port )
-{
-  if ( data_.sources == STK_FILE ) {
-    oStream_ << "Messager::startMidiInput: already reading a scorefile ... cannot do realtime control input too!";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  if ( data_.sources & STK_MIDI ) {
-    oStream_ << "Messager::startMidiInput: MIDI input already started.";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  // First start the stdin input thread if it isn't already running
-  // (to allow the user to exit).
-  if ( !( data_.sources & STK_STDIN ) ) {
-    if ( this->startStdInput() == false ) {
-      oStream_ << "Messager::startMidiInput: unable to start input from stdin.";
-      handleError( StkError::WARNING );
-      return false;
+  int x, y;
+  for ( x=0; x<NXMAX-1; x++ ) {
+    for ( y=0; y<NYMAX-1; y++ ) {
+      v_[x][y] = 0;
     }
   }
+  for ( x=0; x<NXMAX; x++ ) {
+    for ( y=0; y<NYMAX; y++ ) {
 
-  try {
-    data_.midi = new RtMidiIn();
-    data_.midi->setCallback( &midiHandler, (void *) &data_ );
-    if ( port == -1 ) data_.midi->openVirtualPort();
-    else data_.midi->openPort( (unsigned int)port );
-  }
-  catch ( RtMidiError &error ) {
-    oStream_ << "Messager::startMidiInput: error creating RtMidiIn instance (" << error.getMessage() << ").";
-    handleError( StkError::WARNING );
-    return false;
-  }
+      vxp_[x][y] = 0;
+      vxm_[x][y] = 0;
+      vyp_[x][y] = 0;
+      vym_[x][y] = 0;
 
-  data_.sources |= STK_MIDI;
-  return true;
-}
-
-bool Messager :: startSocketInput( int port )
-{
-  if ( data_.sources == STK_FILE ) {
-    oStream_ << "Messager::startSocketInput: already reading a scorefile ... cannot do realtime control input too!";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  if ( data_.sources & STK_SOCKET ) {
-    oStream_ << "Messager::startSocketInput: socket input thread already started.";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  // Create the socket server.
-  try {
-    data_.socket = new TcpServer( port );
-  }
-  catch ( StkError& ) {
-    return false;
-  }
-
-  oStream_ << "Socket server listening for connection(s) on port " << port << "...";
-  handleError( StkError::STATUS );
-
-  // Initialize socket descriptor information.
-  FD_ZERO(&data_.mask);
-  int fd = data_.socket->id();
-  FD_SET( fd, &data_.mask );
-  data_.fd.push_back( fd );
-
-  // Start the socket thread.
-  if ( !socketThread_.start( (THREAD_FUNCTION)&socketHandler, &data_ ) ) {
-    oStream_ << "Messager::startSocketInput: unable to start socket input thread!";
-    handleError( StkError::WARNING );
-    return false;
-  }
-
-  data_.sources |= STK_SOCKET;
-  return true;
-}
-
-#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
-  #include <sys/time.h>
-  #include <errno.h>
-#endif
-
-THREAD_RETURN THREAD_TYPE socketHandler(void *ptr)
-{
-  Messager::MessagerData *data = (Messager::MessagerData *) ptr;
-  Skini::Message message;
-  std::vector<int>& fd = data->fd;
-
-  struct timeval timeout;
-  fd_set rmask;
-  int newfd;
-  unsigned int i;
-  const int bufferSize = 1024;
-  char buffer[bufferSize];
-  int index = 0, bytesRead = 0;
-  std::string line;
-  std::vector<int> fdclose;
-
-  while ( data->sources & STK_SOCKET ) {
-
-    // Use select function to periodically poll socket desriptors.
-    rmask = data->mask;
-    timeout.tv_sec = 0; timeout.tv_usec = 50000; // 50 milliseconds
-    if ( select( fd.back()+1, &rmask, (fd_set *)0, (fd_set *)0, &timeout ) <= 0 ) continue;
-
-    // A file descriptor is set.  Check if there's a new socket connection available.
-    if ( FD_ISSET( data->socket->id(), &rmask ) ) {
-
-      // Accept and service new connection.
-      newfd = data->socket->accept();
-      if ( newfd >= 0 ) {
-        std::cout << "New socket connection made.\n" << std::endl;
-
-        // Set the socket to non-blocking mode.
-        Socket::setBlocking( newfd, false );
-
-        // Save the descriptor and update the masks.
-        fd.push_back( newfd );
-        std::sort( fd.begin(), data->fd.end() );
-        FD_SET( newfd, &data->mask );
-        FD_CLR( data->socket->id(), &rmask );
-      }
-      else
-        std::cerr << "Messager: Couldn't accept connection request!\n";
+      vxp1_[x][y] = 0;
+      vxm1_[x][y] = 0;
+      vyp1_[x][y] = 0;
+      vym1_[x][y] = 0;
     }
+  }
+}
 
-    // Check the other descriptors.
-    for ( i=0; i<fd.size(); i++ ) {
+StkFloat Mesh2D :: energy( void )
+{
+  // Return total energy contained in wave variables Note that some
+  // energy is also contained in any filter delay elements.
 
-      if ( !FD_ISSET( fd[i], &rmask ) ) continue;
-
-      // This connection has data.  Read and parse it.
-      bytesRead = 0;
-      index = 0;
-#if ( defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__) )
-      errno = 0;
-      while (bytesRead != -1 && errno != EAGAIN) {
-#elif defined(__OS_WINDOWS__)
-      while (bytesRead != SOCKET_ERROR && WSAGetLastError() != WSAEWOULDBLOCK) {
-#endif
-
-        while ( index < bytesRead ) {
-          line += buffer[index];
-          if ( buffer[index++] == '\n' ) {
-            data->mutex.lock();
-            if ( line.compare(0, 4, "Exit") == 0 || line.compare(0, 4, "exit") == 0 ) {
-              // Ignore this line and assume the connection will be
-              // closed on a subsequent read call.
-              ;
-            }
-            else if ( data->skini.parseString( line, message ) )
-              data->queue.push( message );
-            data->mutex.unlock();
-            line.erase();
-          }
-        }
-        index = 0;
-
-        bytesRead = Socket::readBuffer(fd[i], buffer, bufferSize, 0);
-        if (bytesRead == 0) {
-          // This socket connection closed.
-          FD_CLR( fd[i], &data->mask );
-          Socket::close( fd[i] );
-          fdclose.push_back( fd[i] );
-        }
+  int x, y;
+  StkFloat t;
+  StkFloat e = 0;
+  if ( counter_ & 1 ) { // Ready for Mesh2D::tick1() to be called.
+    for ( x=0; x<NX_; x++ ) {
+      for ( y=0; y<NY_; y++ ) {
+        t = vxp1_[x][y];
+        e += t*t;
+        t = vxm1_[x][y];
+        e += t*t;
+        t = vyp1_[x][y];
+        e += t*t;
+        t = vym1_[x][y];
+        e += t*t;
       }
     }
-
-    // Now remove descriptors for closed connections.
-    for ( i=0; i<fdclose.size(); i++ ) {
-      for ( unsigned int j=0; j<fd.size(); j++ ) {
-        if ( fd[j] == fdclose[i] ) {
-          fd.erase( fd.begin() + j );
-          break;
-        }
+  }
+  else { // Ready for Mesh2D::tick0() to be called.
+    for ( x=0; x<NX_; x++ ) {
+      for ( y=0; y<NY_; y++ ) {
+        t = vxp_[x][y];
+        e += t*t;
+        t = vxm_[x][y];
+        e += t*t;
+        t = vyp_[x][y];
+        e += t*t;
+        t = vym_[x][y];
+        e += t*t;
       }
-
-      // Check to see whether all connections are closed.  Note that
-      // the server descriptor will always remain.
-      if ( fd.size() == 1 ) {
-        data->sources &= ~STK_SOCKET;
-        if ( data->sources & STK_MIDI )
-          std::cout << "MIDI input still running ... type 'exit<cr>' to quit.\n" << std::endl;
-        else if ( !(data->sources & STK_STDIN) ) {
-          // No stdin thread running, so quit now.
-          message.type = __SK_Exit_;
-          data->queue.push( message );
-        }
-      }
-      fdclose.clear();
     }
-
-    // Wait until we're below the queue limit.
-    while ( data->queue.size() >= data->queueLimit ) Stk::sleep( 50 );
   }
 
-  return NULL;
+  return e;
 }
 
+void Mesh2D :: setNX( unsigned short lenX )
+{
+  if ( lenX < 2 ) {
+    oStream_ << "Mesh2D::setNX(" << lenX << "): Minimum length is 2!";
+    handleError( StkError::WARNING ); return;
+  }
+  else if ( lenX > NXMAX ) {
+    oStream_ << "Mesh2D::setNX(" << lenX << "): Maximum length is " << NXMAX << '!';
+    handleError( StkError::WARNING ); return;
+  }
+
+  NX_ = lenX;
+}
+
+void Mesh2D :: setNY( unsigned short lenY )
+{
+  if ( lenY < 2 ) {
+    oStream_ << "Mesh2D::setNY(" << lenY << "): Minimum length is 2!";
+    handleError( StkError::WARNING ); return;
+  }
+  else if ( lenY > NYMAX ) {
+    oStream_ << "Mesh2D::setNY(" << lenY << "): Maximum length is " << NXMAX << '!';
+    handleError( StkError::WARNING ); return;
+  }
+
+  NY_ = lenY;
+}
+
+void Mesh2D :: setDecay( StkFloat decayFactor )
+{
+  if ( decayFactor < 0.0 || decayFactor > 1.0 ) {
+    oStream_ << "Mesh2D::setDecay: decayFactor is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  int i;
+  for ( i=0; i<NYMAX; i++ )
+    filterY_[i].setGain( decayFactor );
+
+  for (i=0; i<NXMAX; i++)
+    filterX_[i].setGain( decayFactor );
+}
+
+void Mesh2D :: setInputPosition( StkFloat xFactor, StkFloat yFactor )
+{
+  if ( xFactor < 0.0 || xFactor > 1.0 ) {
+    oStream_ << "Mesh2D::setInputPosition xFactor value is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  if ( yFactor < 0.0 || yFactor > 1.0 ) {
+    oStream_ << "Mesh2D::setInputPosition yFactor value is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  xInput_ = (unsigned short) (xFactor * (NX_ - 1));
+  yInput_ = (unsigned short) (yFactor * (NY_ - 1));
+}
+
+void Mesh2D :: noteOn( StkFloat frequency, StkFloat amplitude )
+{
+  // Input at corner.
+  if ( counter_ & 1 ) {
+    vxp1_[xInput_][yInput_] += amplitude;
+    vyp1_[xInput_][yInput_] += amplitude;
+  }
+  else {
+    vxp_[xInput_][yInput_] += amplitude;
+    vyp_[xInput_][yInput_] += amplitude;
+  }
+}
+
+void Mesh2D :: noteOff( StkFloat amplitude )
+{
+  return;
+}
+
+StkFloat Mesh2D :: inputTick( StkFloat input )
+{
+  if ( counter_ & 1 ) {
+    vxp1_[xInput_][yInput_] += input;
+    vyp1_[xInput_][yInput_] += input;
+    lastFrame_[0] = tick1();
+  }
+  else {
+    vxp_[xInput_][yInput_] += input;
+    vyp_[xInput_][yInput_] += input;
+    lastFrame_[0] = tick0();
+  }
+
+  counter_++;
+  return lastFrame_[0];
+}
+
+StkFloat Mesh2D :: tick( unsigned int )
+{
+  lastFrame_[0] = ((counter_ & 1) ? this->tick1() : this->tick0());
+  counter_++;
+  return lastFrame_[0];
+}
+
+const StkFloat VSCALE = 0.5;
+
+StkFloat Mesh2D :: tick0( void )
+{
+  int x, y;
+  StkFloat outsamp = 0;
+
+  // Update junction velocities.
+  for (x=0; x<NX_-1; x++) {
+    for (y=0; y<NY_-1; y++) {
+      v_[x][y] = ( vxp_[x][y] + vxm_[x+1][y] + 
+		  vyp_[x][y] + vym_[x][y+1] ) * VSCALE;
+    }
+  }    
+
+  // Update junction outgoing waves, using alternate wave-variable buffers.
+  for (x=0; x<NX_-1; x++) {
+    for (y=0; y<NY_-1; y++) {
+      StkFloat vxy = v_[x][y];
+      // Update positive-going waves.
+      vxp1_[x+1][y] = vxy - vxm_[x+1][y];
+      vyp1_[x][y+1] = vxy - vym_[x][y+1];
+      // Update minus-going waves.
+      vxm1_[x][y] = vxy - vxp_[x][y];
+      vym1_[x][y] = vxy - vyp_[x][y];
+    }
+  }    
+
+  // Loop over velocity-junction boundary faces, update edge
+  // reflections, with filtering.  We're only filtering on one x and y
+  // edge here and even this could be made much sparser.
+  for (y=0; y<NY_-1; y++) {
+    vxp1_[0][y] = filterY_[y].tick(vxm_[0][y]);
+    vxm1_[NX_-1][y] = vxp_[NX_-1][y];
+  }
+  for (x=0; x<NX_-1; x++) {
+    vyp1_[x][0] = filterX_[x].tick(vym_[x][0]);
+    vym1_[x][NY_-1] = vyp_[x][NY_-1];
+  }
+
+  // Output = sum of outgoing waves at far corner.  Note that the last
+  // index in each coordinate direction is used only with the other
+  // coordinate indices at their next-to-last values.  This is because
+  // the "unit strings" attached to each velocity node to terminate
+  // the mesh are not themselves connected together.
+  outsamp = vxp_[NX_-1][NY_-2] + vyp_[NX_-2][NY_-1];
+
+  return outsamp;
+}
+
+StkFloat Mesh2D :: tick1( void )
+{
+  int x, y;
+  StkFloat outsamp = 0;
+
+  // Update junction velocities.
+  for (x=0; x<NX_-1; x++) {
+    for (y=0; y<NY_-1; y++) {
+      v_[x][y] = ( vxp1_[x][y] + vxm1_[x+1][y] + 
+		  vyp1_[x][y] + vym1_[x][y+1] ) * VSCALE;
+    }
+  }
+
+  // Update junction outgoing waves, 
+  // using alternate wave-variable buffers.
+  for (x=0; x<NX_-1; x++) {
+    for (y=0; y<NY_-1; y++) {
+      StkFloat vxy = v_[x][y];
+
+      // Update positive-going waves.
+      vxp_[x+1][y] = vxy - vxm1_[x+1][y];
+      vyp_[x][y+1] = vxy - vym1_[x][y+1];
+
+      // Update minus-going waves.
+      vxm_[x][y] = vxy - vxp1_[x][y];
+      vym_[x][y] = vxy - vyp1_[x][y];
+    }
+  }
+
+  // Loop over velocity-junction boundary faces, update edge
+  // reflections, with filtering.  We're only filtering on one x and y
+  // edge here and even this could be made much sparser.
+  for (y=0; y<NY_-1; y++) {
+    vxp_[0][y] = filterY_[y].tick(vxm1_[0][y]);
+    vxm_[NX_-1][y] = vxp1_[NX_-1][y];
+  }
+  for (x=0; x<NX_-1; x++) {
+    vyp_[x][0] = filterX_[x].tick(vym1_[x][0]);
+    vym_[x][NY_-1] = vyp1_[x][NY_-1];
+  }
+
+  // Output = sum of outgoing waves at far corner.
+  outsamp = vxp1_[NX_-1][NY_-2] + vyp1_[NX_-2][NY_-1];
+
+  return outsamp;
+}
+
+void Mesh2D :: controlChange( int number, StkFloat value )
+{
+#if defined(_STK_DEBUG_)
+  if ( Stk::inRange( value, 0.0, 128.0 ) == false ) {
+    oStream_ << "Mesh2D::controlChange: value (" << value << ") is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
 #endif
+
+  StkFloat normalizedValue = value * ONE_OVER_128;
+  if ( number == 2 ) // 2
+    this->setNX( (unsigned short) (normalizedValue * (NXMAX-2) + 2) );
+  else if ( number == 4 ) // 4
+    this->setNY( (unsigned short) (normalizedValue * (NYMAX-2) + 2) );
+  else if ( number == 11 ) // 11
+    this->setDecay( 0.9 + (normalizedValue * 0.1) );
+  else if ( number == __SK_ModWheel_ ) // 1
+    this->setInputPosition( normalizedValue, normalizedValue );
+#if defined(_STK_DEBUG_)
+  else {
+    oStream_ << "Mesh2D::controlChange: undefined control number (" << number << ")!";
+    handleError( StkError::WARNING );
+  }
+#endif
+}
 
 } // stk namespace
-

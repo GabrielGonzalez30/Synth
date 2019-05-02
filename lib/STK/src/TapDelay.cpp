@@ -1,105 +1,87 @@
 /***************************************************/
-/*! \class TcpClient
-    \brief STK TCP socket client class.
+/*! \class TapDelay
+    \brief STK non-interpolating tapped delay line class.
 
-    This class provides a uniform cross-platform TCP socket client
-    interface.  Methods are provided for reading or writing data
-    buffers to/from connections.
+    This class implements a non-interpolating digital delay-line with
+    an arbitrary number of output "taps".  If the maximum length and
+    tap delays are not specified during instantiation, a fixed maximum
+    length of 4095 and a single tap delay of zero is set.
+    
+    A non-interpolating delay line is typically used in fixed
+    delay-length applications, such as for reverberation.
 
-    TCP sockets are reliable and connection-oriented.  A TCP socket
-    client must be connected to a TCP server before data can be sent
-    or received.  Data delivery is guaranteed in order, without loss,
-    error, or duplication.  That said, TCP transmissions tend to be
-    slower than those using the UDP protocol and data sent with
-    multiple \e write() calls can be arbitrarily combined by the
-    underlying system.
-
-    The user is responsible for checking the values
-    returned by the read/write methods.  Values
-    less than or equal to zero indicate a closed
-    or lost connection or the occurence of an error.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "TcpClient.h"
-#include <cstring>
-#include <sstream>
+#include "TapDelay.h"
 
 namespace stk {
 
-TcpClient :: TcpClient( int port, std::string hostname )
+TapDelay :: TapDelay( std::vector<unsigned long> taps, unsigned long maxDelay )
 {
-#if defined(__OS_WINDOWS__)  // windoze-only stuff
-  WSADATA wsaData;
-  WORD wVersionRequested = MAKEWORD(1,1);
-
-  WSAStartup( wVersionRequested, &wsaData );
-  if ( wsaData.wVersion != wVersionRequested ) {
-    oStream_ << "TcpClient: Incompatible Windows socket library version!";
-    handleError( StkError::PROCESS_SOCKET );
+  // Writing before reading allows delays from 0 to length-1. 
+  // If we want to allow a delay of maxDelay, we need a
+  // delayline of length = maxDelay+1.
+  if ( maxDelay < 1 ) {
+    oStream_ << "TapDelay::TapDelay: maxDelay must be > 0!\n";
+    handleError( StkError::FUNCTION_ARGUMENT );
   }
-#endif
 
-  // Create a socket client connection.
-  connect( port, hostname );
+  for ( unsigned int i=0; i<taps.size(); i++ ) {
+    if ( taps[i] > maxDelay ) {
+      oStream_ << "TapDelay::TapDelay: maxDelay must be > than all tap delay values!\n";
+      handleError( StkError::FUNCTION_ARGUMENT );
+    }
+  }
+
+  if ( ( maxDelay + 1 ) > inputs_.size() )
+    inputs_.resize( maxDelay + 1, 1, 0.0 );
+
+  inPoint_ = 0;
+  this->setTapDelays( taps );
 }
 
-TcpClient :: ~TcpClient( void )
+TapDelay :: ~TapDelay()
 {
 }
 
-int TcpClient :: connect( int port, std::string hostname )
+void TapDelay :: setMaximumDelay( unsigned long delay )
 {
-  // Close any existing connections.
-  this->close( soket_ );
+  if ( delay < inputs_.size() ) return;
 
-  // Create the client-side socket
-  soket_ = ::socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
-  if ( soket_ < 0 ) {
-    oStream_ << "TcpClient: Couldn't create socket client!";
-    handleError( StkError::PROCESS_SOCKET );
+  for ( unsigned int i=0; i<delays_.size(); i++ ) {
+    if ( delay < delays_[i] ) {
+      oStream_ << "TapDelay::setMaximumDelay: argument (" << delay << ") less than a current tap delay setting (" << delays_[i] << ")!\n";
+      handleError( StkError::WARNING ); return;
+    }
   }
 
-  int flag = 1;
-  int result = setsockopt( soket_, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int) );
-  if ( result < 0 ) {
-    oStream_ << "TcpClient: Error setting socket options!";
-    handleError( StkError::PROCESS_SOCKET );
-  }
-
-  struct hostent *hostp;
-  if ( ( hostp = gethostbyname( hostname.c_str() ) ) == 0 ) {
-    oStream_ << "TcpClient: unknown host (" << hostname << ")!";
-    handleError( StkError::PROCESS_SOCKET_IPADDR );
-  }
-
-  // Fill in the address structure
-  struct sockaddr_in server_address;
-  server_address.sin_family = AF_INET;
-  memcpy( (void *)&server_address.sin_addr, hostp->h_addr, hostp->h_length );
-  server_address.sin_port = htons(port);
-
-  // Connect to the server
-  if ( ::connect( soket_, (struct sockaddr *)&server_address, sizeof(server_address) ) < 0 ) {
-    oStream_ << "TcpClient: Couldn't connect to socket server!";
-    handleError( StkError::PROCESS_SOCKET );
-  }
-
-  return soket_;
+  inputs_.resize( delay + 1 );
 }
 
-int TcpClient :: writeBuffer( const void *buffer, long bufferSize, int flags )
+void TapDelay :: setTapDelays( std::vector<unsigned long> taps )
 {
-  if ( !isValid( soket_ ) ) return -1;
-  return send( soket_, (const char *)buffer, bufferSize, flags );
-}
+  for ( unsigned int i=0; i<taps.size(); i++ ) {
+    if ( taps[i] > inputs_.size() - 1 ) { // The value is too big.
+      oStream_ << "TapDelay::setTapDelay: argument (" << taps[i] << ") greater than maximum!\n";
+      handleError( StkError::WARNING ); return;
+    }
+  }
 
-int TcpClient :: readBuffer( void *buffer, long bufferSize, int flags )
-{
-  if ( !isValid( soket_ ) ) return -1;
-  return recv( soket_, (char *)buffer, bufferSize, flags );
+  if ( taps.size() != outPoint_.size() ) {
+    outPoint_.resize( taps.size() );
+    delays_.resize( taps.size() );
+    lastFrame_.resize( 1, (unsigned int)taps.size(), 0.0 );
+  }
+
+  for ( unsigned int i=0; i<taps.size(); i++ ) {
+    // read chases write
+    if ( inPoint_ >= taps[i] ) outPoint_[i] = inPoint_ - taps[i];
+    else outPoint_[i] = inputs_.size() + inPoint_ - taps[i];
+    delays_[i] = taps[i];
+  }
 }
 
 } // stk namespace
+

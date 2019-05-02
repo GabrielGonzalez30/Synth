@@ -1,106 +1,99 @@
 /***************************************************/
-/*! \class Thread
-    \brief STK thread class.
+/*! \class TcpServer
+    \brief STK TCP socket server class.
 
-    This class provides a uniform interface for cross-platform
-    threads.  On unix systems, the pthread library is used.  Under
-    Windows, the C runtime threadex functions are used.
+    This class provides a uniform cross-platform TCP socket server
+    interface.  Methods are provided for reading or writing data
+    buffers to/from connections.
 
-    Each instance of the Thread class can be used to control a single
-    thread process.  Routines are provided to signal cancelation
-    and/or joining with a thread, though it is not possible for this
-    class to know the running status of a thread once it is started.
+    TCP sockets are reliable and connection-oriented.  A TCP socket
+    server must accept a connection from a TCP client before data can
+    be sent or received.  Data delivery is guaranteed in order,
+    without loss, error, or duplication.  That said, TCP transmissions
+    tend to be slower than those using the UDP protocol and data sent
+    with multiple \e write() calls can be arbitrarily combined by the
+    underlying system.
 
-    For cross-platform compatability, thread functions should be
-    declared as follows:
+    The user is responsible for checking the values
+    returned by the read/write methods.  Values
+    less than or equal to zero indicate a closed
+    or lost connection or the occurence of an error.
 
-    THREAD_RETURN THREAD_TYPE thread_function(void *ptr)
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Thread.h"
+#include "TcpServer.h"
 
 namespace stk {
 
-Thread :: Thread()
+TcpServer :: TcpServer( int port )
 {
-  thread_ = 0;
-}
+  // Create a socket server.
+#if defined(__OS_WINDOWS__)  // windoze-only stuff
+  WSADATA wsaData;
+  WORD wVersionRequested = MAKEWORD(1,1);
 
-Thread :: ~Thread()
-{
-}
+  WSAStartup(wVersionRequested, &wsaData);
+  if (wsaData.wVersion != wVersionRequested) {
+    oStream_ << "TcpServer: Incompatible Windows socket library version!";
+    handleError( StkError::PROCESS_SOCKET );
+  }
+#endif
 
-bool Thread :: start( THREAD_FUNCTION routine, void * ptr )
-{
-  if ( thread_ ) {
-    oStream_ << "Thread:: a thread is already running!";
-    handleError( StkError::WARNING );
-    return false;
+  // Create the server-side socket
+  soket_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (soket_ < 0) {
+    oStream_ << "TcpServer: Couldn't create socket server!";
+    handleError( StkError::PROCESS_SOCKET );
   }
 
-#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
-
-  if ( pthread_create(&thread_, NULL, *routine, ptr) == 0 )
-    return true;
-
-#elif defined(__OS_WINDOWS__)
-  unsigned thread_id;
-  thread_ = _beginthreadex(NULL, 0, routine, ptr, 0, &thread_id);
-  if ( thread_ ) return true;
-
-#endif
-  return false;
-}
-
-bool Thread :: cancel()
-{
-#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
-
-  if ( pthread_cancel(thread_) == 0 ) {
-    return true;
+  int flag = 1;
+  int result = setsockopt( soket_, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int) );
+  if (result < 0) {
+    oStream_ << "TcpServer: Error setting socket options!";
+    handleError( StkError::PROCESS_SOCKET );
   }
 
-#elif defined(__OS_WINDOWS__)
+  struct sockaddr_in address;
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = INADDR_ANY;
+  address.sin_port = htons( port );
 
-  TerminateThread((HANDLE)thread_, 0);
-  return true;
-
-#endif
-  return false;
-}
-
-bool Thread :: wait()
-{
-#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
-
-  if ( pthread_join(thread_, NULL) == 0 ) {
-    thread_ = 0;
-    return true;
+  // Bind socket to the appropriate port and interface (INADDR_ANY)
+  if ( bind( soket_, (struct sockaddr *)&address, sizeof(address) ) < 0 ) {
+    oStream_ << "TcpServer: Couldn't bind socket!";
+    handleError( StkError::PROCESS_SOCKET );
   }
 
-#elif defined(__OS_WINDOWS__)
-
-  long retval = WaitForSingleObject( (HANDLE)thread_, INFINITE );
-  if ( retval == WAIT_OBJECT_0 ) {
-    CloseHandle( (HANDLE)thread_ );
-    thread_ = 0;
-    return true;
+  // Listen for incoming connection(s)
+  if ( listen( soket_, 1 ) < 0 ) {
+    oStream_ << "TcpServer: Couldn't start server listening!";
+    handleError( StkError::PROCESS_SOCKET );
   }
 
-#endif
-  return false;
+  port_ = port;
 }
 
-void Thread :: testCancel(void)
+TcpServer :: ~TcpServer()
 {
-#if (defined(__OS_IRIX__) || defined(__OS_LINUX__) || defined(__OS_MACOSX__))
+}
 
-  pthread_testcancel();
+int TcpServer :: accept( void )
+{
+  return ::accept( soket_, NULL, NULL );
+}
 
-#endif
+int TcpServer :: writeBuffer(const void *buffer, long bufferSize, int flags )
+{
+  if ( !isValid( soket_ ) ) return -1;
+  return send( soket_, (const char *)buffer, bufferSize, flags );
+}
+
+int TcpServer :: readBuffer(void *buffer, long bufferSize, int flags )
+{
+  if ( !isValid( soket_ ) ) return -1;
+  return recv( soket_, (char *)buffer, bufferSize, flags );
 }
 
 } // stk namespace

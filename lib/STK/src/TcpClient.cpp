@@ -1,17 +1,17 @@
 /***************************************************/
-/*! \class TcpServer
-    \brief STK TCP socket server class.
+/*! \class TcpClient
+    \brief STK TCP socket client class.
 
-    This class provides a uniform cross-platform TCP socket server
+    This class provides a uniform cross-platform TCP socket client
     interface.  Methods are provided for reading or writing data
     buffers to/from connections.
 
     TCP sockets are reliable and connection-oriented.  A TCP socket
-    server must accept a connection from a TCP client before data can
-    be sent or received.  Data delivery is guaranteed in order,
-    without loss, error, or duplication.  That said, TCP transmissions
-    tend to be slower than those using the UDP protocol and data sent
-    with multiple \e write() calls can be arbitrarily combined by the
+    client must be connected to a TCP server before data can be sent
+    or received.  Data delivery is guaranteed in order, without loss,
+    error, or duplication.  That said, TCP transmissions tend to be
+    slower than those using the UDP protocol and data sent with
+    multiple \e write() calls can be arbitrarily combined by the
     underlying system.
 
     The user is responsible for checking the values
@@ -19,78 +19,84 @@
     less than or equal to zero indicate a closed
     or lost connection or the occurence of an error.
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "TcpServer.h"
+#include "TcpClient.h"
+#include <cstring>
+#include <sstream>
 
 namespace stk {
 
-TcpServer :: TcpServer( int port )
+TcpClient :: TcpClient( int port, std::string hostname )
 {
-  // Create a socket server.
 #if defined(__OS_WINDOWS__)  // windoze-only stuff
   WSADATA wsaData;
   WORD wVersionRequested = MAKEWORD(1,1);
 
-  WSAStartup(wVersionRequested, &wsaData);
-  if (wsaData.wVersion != wVersionRequested) {
-    oStream_ << "TcpServer: Incompatible Windows socket library version!";
+  WSAStartup( wVersionRequested, &wsaData );
+  if ( wsaData.wVersion != wVersionRequested ) {
+    oStream_ << "TcpClient: Incompatible Windows socket library version!";
     handleError( StkError::PROCESS_SOCKET );
   }
 #endif
 
-  // Create the server-side socket
-  soket_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if (soket_ < 0) {
-    oStream_ << "TcpServer: Couldn't create socket server!";
+  // Create a socket client connection.
+  connect( port, hostname );
+}
+
+TcpClient :: ~TcpClient( void )
+{
+}
+
+int TcpClient :: connect( int port, std::string hostname )
+{
+  // Close any existing connections.
+  this->close( soket_ );
+
+  // Create the client-side socket
+  soket_ = ::socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
+  if ( soket_ < 0 ) {
+    oStream_ << "TcpClient: Couldn't create socket client!";
     handleError( StkError::PROCESS_SOCKET );
   }
 
   int flag = 1;
   int result = setsockopt( soket_, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int) );
-  if (result < 0) {
-    oStream_ << "TcpServer: Error setting socket options!";
+  if ( result < 0 ) {
+    oStream_ << "TcpClient: Error setting socket options!";
     handleError( StkError::PROCESS_SOCKET );
   }
 
-  struct sockaddr_in address;
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons( port );
+  struct hostent *hostp;
+  if ( ( hostp = gethostbyname( hostname.c_str() ) ) == 0 ) {
+    oStream_ << "TcpClient: unknown host (" << hostname << ")!";
+    handleError( StkError::PROCESS_SOCKET_IPADDR );
+  }
 
-  // Bind socket to the appropriate port and interface (INADDR_ANY)
-  if ( bind( soket_, (struct sockaddr *)&address, sizeof(address) ) < 0 ) {
-    oStream_ << "TcpServer: Couldn't bind socket!";
+  // Fill in the address structure
+  struct sockaddr_in server_address;
+  server_address.sin_family = AF_INET;
+  memcpy( (void *)&server_address.sin_addr, hostp->h_addr, hostp->h_length );
+  server_address.sin_port = htons(port);
+
+  // Connect to the server
+  if ( ::connect( soket_, (struct sockaddr *)&server_address, sizeof(server_address) ) < 0 ) {
+    oStream_ << "TcpClient: Couldn't connect to socket server!";
     handleError( StkError::PROCESS_SOCKET );
   }
 
-  // Listen for incoming connection(s)
-  if ( listen( soket_, 1 ) < 0 ) {
-    oStream_ << "TcpServer: Couldn't start server listening!";
-    handleError( StkError::PROCESS_SOCKET );
-  }
-
-  port_ = port;
+  return soket_;
 }
 
-TcpServer :: ~TcpServer()
-{
-}
-
-int TcpServer :: accept( void )
-{
-  return ::accept( soket_, NULL, NULL );
-}
-
-int TcpServer :: writeBuffer(const void *buffer, long bufferSize, int flags )
+int TcpClient :: writeBuffer( const void *buffer, long bufferSize, int flags )
 {
   if ( !isValid( soket_ ) ) return -1;
   return send( soket_, (const char *)buffer, bufferSize, flags );
 }
 
-int TcpServer :: readBuffer(void *buffer, long bufferSize, int flags )
+int TcpClient :: readBuffer( void *buffer, long bufferSize, int flags )
 {
   if ( !isValid( soket_ ) ) return -1;
   return recv( soket_, (char *)buffer, bufferSize, flags );

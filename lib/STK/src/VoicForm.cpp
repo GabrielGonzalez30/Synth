@@ -1,224 +1,189 @@
 /***************************************************/
-/*! \class Voicer
-    \brief STK voice manager class.
+/*! \class VoicForm
+    \brief Four formant synthesis instrument.
 
-    This class can be used to manage a group of STK instrument
-    classes.  Individual voices can be controlled via unique note
-    tags.  Instrument groups can be controlled by group number.
+    This instrument contains an excitation singing
+    wavetable (looping wave with random and
+    periodic vibrato, smoothing on frequency,
+    etc.), excitation noise, and four sweepable
+    complex resonances.
 
-    A previously constructed STK instrument class is linked with a
-    voice manager using the addInstrument() function.  An optional
-    group number argument can be specified to the addInstrument()
-    function as well (default group = 0).  The voice manager does not
-    delete any instrument instances ... it is the responsibility of
-    the user to allocate and deallocate all instruments.
+    Measured formant data is included, and enough
+    data is there to support either parallel or
+    cascade synthesis.  In the floating point case
+    cascade synthesis is the most natural so
+    that's what you'll find here.
 
-    The tick() function returns the mix of all sounding voices.  Each
-    noteOn returns a unique tag (credits to the NeXT MusicKit), so you
-    can send control changes to specific voices within an ensemble.
-    Alternately, control changes can be sent to all voices in a given
-    group.
+    Control Change Numbers: 
+       - Voiced/Unvoiced Mix = 2
+       - Vowel/Phoneme Selection = 4
+       - Vibrato Frequency = 11
+       - Vibrato Gain = 1
+       - Loudness (Spectral Tilt) = 128
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Voicer.h"
+#include "VoicForm.h"
+#include "Phonemes.h"
+#include "SKINImsg.h"
+#include <cstring>
 #include <cmath>
 
 namespace stk {
 
-Voicer :: Voicer( StkFloat decayTime )
+VoicForm :: VoicForm( void ) : Instrmnt()
 {
-  if ( decayTime < 0.0 ) {
-    oStream_ << "Voicer::Voicer: argument (" << decayTime << ") must be positive!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
+  // Concatenate the STK rawwave path to the rawwave file
+  voiced_ = new SingWave( (Stk::rawwavePath() + "impuls20.raw").c_str(), true );
+  voiced_->setGainRate( 0.001 );
+  voiced_->setGainTarget( 0.0 );
 
-  tags_ = 23456;
-  muteTime_ = (int) ( decayTime * Stk::sampleRate() );
-  lastFrame_.resize( 1, 1, 0.0 );
+  for ( int i=0; i<4; i++ )
+    filters_[i].setSweepRate( 0.001 );
+    
+  onezero_.setZero( -0.9 );
+  onepole_.setPole( 0.9 );
+    
+  noiseEnv_.setRate( 0.001 );
+  noiseEnv_.setTarget( 0.0 );
+    
+  this->setPhoneme( "eee" );
+  this->clear();
+}  
+
+VoicForm :: ~VoicForm( void )
+{
+  delete voiced_;
 }
 
-void Voicer :: addInstrument( Instrmnt *instrument, int group )
+void VoicForm :: clear( void )
 {
-  Voicer::Voice voice;
-  voice.instrument = instrument;
-  voice.group = group;
-  voice.noteNumber = -1;
-  voices_.push_back( voice );
-
-  // Check output channels and resize lastFrame_ if necessary.
-  if ( instrument->channelsOut() > lastFrame_.channels() ) {
-    unsigned int startChannel = lastFrame_.channels();
-    lastFrame_.resize( 1, instrument->channelsOut() );
-    for ( unsigned int i=startChannel; i<lastFrame_.size(); i++ )
-      lastFrame_[i] = 0.0;
+  onezero_.clear();
+  onepole_.clear();
+  for ( int i=0; i<4; i++ ) {
+    filters_[i].clear();
   }
 }
 
-void Voicer :: removeInstrument( Instrmnt *instrument )
+void VoicForm :: setFrequency( StkFloat frequency )
+{
+#if defined(_STK_DEBUG_)
+  if ( frequency <= 0.0 ) {
+    oStream_ << "VoicForm::setFrequency: parameter is less than or equal to zero!";
+    handleError( StkError::WARNING ); return;
+  }
+#endif
+
+  voiced_->setFrequency( frequency );
+}
+
+bool VoicForm :: setPhoneme( const char *phoneme )
 {
   bool found = false;
-  std::vector< Voicer::Voice >::iterator i;
-  for ( i=voices_.begin(); i!=voices_.end(); ++i ) {
-    if ( (*i).instrument != instrument ) continue;
-    voices_.erase( i );
-    found = true;
-    break;
+  unsigned int i = 0;
+  while( i < 32 && !found ) {
+    if ( !strcmp( Phonemes::name(i), phoneme ) ) {
+      found = true;
+      filters_[0].setTargets( Phonemes::formantFrequency(i, 0), Phonemes::formantRadius(i, 0), pow(10.0, Phonemes::formantGain(i, 0 ) / 20.0) );
+      filters_[1].setTargets( Phonemes::formantFrequency(i, 1), Phonemes::formantRadius(i, 1), pow(10.0, Phonemes::formantGain(i, 1 ) / 20.0) );
+      filters_[2].setTargets( Phonemes::formantFrequency(i, 2), Phonemes::formantRadius(i, 2), pow(10.0, Phonemes::formantGain(i, 2 ) / 20.0) );
+      filters_[3].setTargets( Phonemes::formantFrequency(i, 3), Phonemes::formantRadius(i, 3), pow(10.0, Phonemes::formantGain(i, 3 ) / 20.0) );
+      this->setVoiced( Phonemes::voiceGain( i ) );
+      this->setUnVoiced( Phonemes::noiseGain( i ) );
+    }
+    i++;
   }
 
-  if ( found ) {
-    // Check output channels and resize lastFrame_ if necessary.
-    unsigned int maxChannels = 1;
-    for ( i=voices_.begin(); i!=voices_.end(); ++i ) {
-      if ( (*i).instrument->channelsOut() > maxChannels ) maxChannels = (*i).instrument->channelsOut();
-    }
-    if ( maxChannels < lastFrame_.channels() )
-      lastFrame_.resize( 1, maxChannels );
-  }
-  else {
-    oStream_ << "Voicer::removeInstrument: instrument pointer not found in current voices!";
+  if ( !found ) {
+    oStream_ << "VoicForm::setPhoneme: phoneme " << phoneme << " not found!";
     handleError( StkError::WARNING );
   }
+
+  return found;
 }
 
-long Voicer :: noteOn(StkFloat noteNumber, StkFloat amplitude, int group )
+void VoicForm :: setFilterSweepRate( unsigned int whichOne, StkFloat rate )
 {
-  unsigned int i;
-  StkFloat frequency = (StkFloat) 220.0 * pow( 2.0, (noteNumber - 57.0) / 12.0 );
-  for ( i=0; i<voices_.size(); i++ ) {
-    if (voices_[i].noteNumber < 0 && voices_[i].group == group) {
-      voices_[i].tag = tags_++;
-      voices_[i].group = group;
-      voices_[i].noteNumber = noteNumber;
-      voices_[i].frequency = frequency;
-      voices_[i].instrument->noteOn( frequency, amplitude * ONE_OVER_128 );
-      voices_[i].sounding = 1;
-      return voices_[i].tag;
+  if ( whichOne > 3 ) {
+    oStream_ << "VoicForm::setFilterSweepRate: filter select argument outside range 0-3!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  filters_[whichOne].setSweepRate(rate);
+}
+
+void VoicForm :: quiet( void )
+{
+  voiced_->noteOff();
+  noiseEnv_.setTarget( 0.0 );
+}
+
+void VoicForm :: noteOn( StkFloat frequency, StkFloat amplitude )
+{
+  this->setFrequency( frequency );
+  voiced_->setGainTarget( amplitude );
+  onepole_.setPole( 0.97 - (amplitude * 0.2) );
+}
+
+void VoicForm :: controlChange( int number, StkFloat value )
+{
+#if defined(_STK_DEBUG_)
+  if ( Stk::inRange( value, 0.0, 128.0 ) == false ) {
+    oStream_ << "VoicForm::controlChange: value (" << value << ") is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+#endif
+
+  StkFloat normalizedValue = value * ONE_OVER_128;
+  if (number == __SK_Breath_)	{ // 2
+    this->setVoiced( 1.0 - normalizedValue );
+    this->setUnVoiced( 0.01 * normalizedValue );
+  }
+  else if (number == __SK_FootControl_)	{ // 4
+    StkFloat temp = 0.0;
+    unsigned int i = (int) value;
+    if (i < 32)	{
+      temp = 0.9;
     }
-  }
-
-  // All voices are sounding, so interrupt the oldest voice.
-  int voice = -1;
-  for ( i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].group == group ) {
-      if ( voice == -1 ) voice = i;
-      else if ( voices_[i].tag < voices_[voice].tag ) voice = (int) i;
+    else if (i < 64)	{
+      i -= 32;
+      temp = 1.0;
     }
-  }
-
-  if ( voice >= 0 ) {
-    voices_[voice].tag = tags_++;
-    voices_[voice].group = group;
-    voices_[voice].noteNumber = noteNumber;
-    voices_[voice].frequency = frequency;
-    voices_[voice].instrument->noteOn( frequency, amplitude * ONE_OVER_128 );
-    voices_[voice].sounding = 1;
-    return voices_[voice].tag;
-  }
-
-  return -1;
-}
-
-void Voicer :: noteOff( StkFloat noteNumber, StkFloat amplitude, int group )
-{
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].noteNumber == noteNumber && voices_[i].group == group ) {
-      voices_[i].instrument->noteOff( amplitude * ONE_OVER_128 );
-      voices_[i].sounding = -muteTime_;
+    else if (i < 96)	{
+      i -= 64;
+      temp = 1.1;
     }
-  }
-}
-
-void Voicer :: noteOff( long tag, StkFloat amplitude )
-{
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].tag == tag ) {
-      voices_[i].instrument->noteOff( amplitude * ONE_OVER_128 );
-      voices_[i].sounding = -muteTime_;
-      break;
+    else if (i < 128)	{
+      i -= 96;
+      temp = 1.2;
     }
-  }
-}
-
-void Voicer :: setFrequency( StkFloat noteNumber, int group )
-{
-  StkFloat frequency = (StkFloat) 220.0 * pow( 2.0, (noteNumber - 57.0) / 12.0 );
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].group == group ) {
-      voices_[i].noteNumber = noteNumber;
-      voices_[i].frequency = frequency;
-      voices_[i].instrument->setFrequency( frequency );
+    else if (i == 128)	{
+      i = 0;
+      temp = 1.4;
     }
+    filters_[0].setTargets( temp * Phonemes::formantFrequency(i, 0), Phonemes::formantRadius(i, 0), pow(10.0, Phonemes::formantGain(i, 0 ) / 20.0) );
+    filters_[1].setTargets( temp * Phonemes::formantFrequency(i, 1), Phonemes::formantRadius(i, 1), pow(10.0, Phonemes::formantGain(i, 1 ) / 20.0) );
+    filters_[2].setTargets( temp * Phonemes::formantFrequency(i, 2), Phonemes::formantRadius(i, 2), pow(10.0, Phonemes::formantGain(i, 2 ) / 20.0) );
+    filters_[3].setTargets( temp * Phonemes::formantFrequency(i, 3), Phonemes::formantRadius(i, 3), pow(10.0, Phonemes::formantGain(i, 3 ) / 20.0) );
+    this->setVoiced( Phonemes::voiceGain( i ) );
+    this->setUnVoiced( Phonemes::noiseGain( i ) );
   }
-}
-
-void Voicer :: setFrequency( long tag, StkFloat noteNumber )
-{
-  StkFloat frequency = (StkFloat) 220.0 * pow( 2.0, (noteNumber - 57.0) / 12.0 );
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].tag == tag ) {
-      voices_[i].noteNumber = noteNumber;
-      voices_[i].frequency = frequency;
-      voices_[i].instrument->setFrequency( frequency );
-      break;
-    }
+  else if (number == __SK_ModFrequency_) // 11
+    voiced_->setVibratoRate( normalizedValue * 12.0);  // 0 to 12 Hz
+  else if (number == __SK_ModWheel_) // 1
+    voiced_->setVibratoGain( normalizedValue * 0.2);
+  else if (number == __SK_AfterTouch_Cont_)	{ // 128
+    this->setVoiced( normalizedValue );
+    onepole_.setPole( 0.97 - ( normalizedValue * 0.2) );
   }
-}
-
-void Voicer :: pitchBend( StkFloat value, int group )
-{
-  StkFloat pitchScaler;
-  if ( value < 8192.0 )
-    pitchScaler = pow( 0.5, (8192.0-value) / 8192.0 );
-  else
-    pitchScaler = pow( 2.0, (value-8192.0) / 8192.0 );
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].group == group )
-      voices_[i].instrument->setFrequency( (StkFloat) (voices_[i].frequency * pitchScaler) );
+#if defined(_STK_DEBUG_)
+  else {
+    oStream_ << "VoicForm::controlChange: undefined control number (" << number << ")!";
+    handleError( StkError::WARNING );
   }
-}
-
-void Voicer :: pitchBend( long tag, StkFloat value )
-{
-  StkFloat pitchScaler;
-  if ( value < 8192.0 )
-    pitchScaler = pow( 0.5, (8192.0-value) / 8192.0 );
-  else
-    pitchScaler = pow( 2.0, (value-8192.0) / 8192.0 );
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].tag == tag ) {
-      voices_[i].instrument->setFrequency( (StkFloat) (voices_[i].frequency * pitchScaler) );
-      break;
-    }
-  }
-}
-
-void Voicer :: controlChange( int number, StkFloat value, int group )
-{
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].group == group )
-      voices_[i].instrument->controlChange( number, value );
-  }
-}
-
-void Voicer :: controlChange( long tag, int number, StkFloat value )
-{
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].tag == tag ) {
-      voices_[i].instrument->controlChange( number, value );
-      break;
-    }
-  }
-}
-
-void Voicer :: silence( void )
-{
-  for ( unsigned int i=0; i<voices_.size(); i++ ) {
-    if ( voices_[i].sounding > 0 )
-      voices_[i].instrument->noteOff( 0.5 );
-  }
+#endif
 }
 
 } // stk namespace

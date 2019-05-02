@@ -1,76 +1,103 @@
 /***************************************************/
-/*! \class TwoPole
-    \brief STK two-pole filter class.
+/*! \class Twang
+    \brief STK enhanced plucked string class.
 
-    This class implements a two-pole digital filter.  A method is
-    provided for creating a resonance in the frequency response while
-    maintaining a nearly constant filter gain.
+    This class implements an enhanced plucked-string
+    physical model, a la Jaffe-Smith, Smith,
+    Karjalainen and others.  It includes a comb
+    filter to simulate pluck position.  The tick()
+    function takes an input sample, which is added
+    to the delayline input.  This can be used to
+    implement commuted synthesis (if the input
+    samples are derived from the impulse response of
+    a body filter) or feedback (as in an electric
+    guitar model).
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    This is a digital waveguide model, making its
+    use possibly subject to patents held by Stanford
+    University, Yamaha, and others.
+
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "TwoPole.h"
-#include <cmath>
+#include "Twang.h"
 
 namespace stk {
 
-TwoPole :: TwoPole( void )
+Twang :: Twang( StkFloat lowestFrequency )
 {
-  b_.resize( 1 );
-  a_.resize( 3 );
-  inputs_.resize( 1, 1, 0.0 );
-  outputs_.resize( 3, 1, 0.0 );
-  b_[0] = 1.0;
-  a_[0] = 1.0;
-
-  Stk::addSampleRateAlert( this );
-}
-
-TwoPole :: ~TwoPole()
-{
-  Stk::removeSampleRateAlert( this );
-}
-
-void TwoPole :: sampleRateChanged( StkFloat newRate, StkFloat oldRate )
-{
-  if ( !ignoreSampleRateChange_ ) {
-    oStream_ << "TwoPole::sampleRateChanged: you may need to recompute filter coefficients!";
-    handleError( StkError::WARNING );
+  if ( lowestFrequency <= 0.0 ) {
+    oStream_ << "Twang::Twang: argument is less than or equal to zero!";
+    handleError( StkError::FUNCTION_ARGUMENT );
   }
+
+  this->setLowestFrequency( lowestFrequency );
+
+  std::vector<StkFloat> coefficients( 2, 0.5 );
+  loopFilter_.setCoefficients( coefficients );
+
+  loopGain_ = 0.995;
+  pluckPosition_ = 0.4;
+  this->setFrequency( 220.0 );
 }
 
-void TwoPole :: setResonance( StkFloat frequency, StkFloat radius, bool normalize )
+void Twang :: clear( void )
+{
+  delayLine_.clear();
+  combDelay_.clear();
+  loopFilter_.clear();
+  lastOutput_ = 0.0;
+}
+
+void Twang :: setLowestFrequency( StkFloat frequency )
+{
+  unsigned long nDelays = (unsigned long) ( Stk::sampleRate() / frequency );
+  delayLine_.setMaximumDelay( nDelays + 1 );
+  combDelay_.setMaximumDelay( nDelays + 1 );
+}
+
+void Twang :: setFrequency( StkFloat frequency )
 {
 #if defined(_STK_DEBUG_)
-  if ( frequency < 0.0 || frequency > 0.5 * Stk::sampleRate() ) {
-    oStream_ << "TwoPole::setResonance: frequency argument (" << frequency << ") is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-  if ( radius < 0.0 || radius >= 1.0 ) {
-    oStream_ << "TwoPole::setResonance: radius argument (" << radius << ") is out of range!";
+  if ( frequency <= 0.0 ) {
+    oStream_ << "Twang::setFrequency: argument is less than or equal to zero!";
     handleError( StkError::WARNING ); return;
   }
 #endif
 
-  a_[2] = radius * radius;
-  a_[1] = (StkFloat) -2.0 * radius * cos(TWO_PI * frequency / Stk::sampleRate());
+  frequency_ = frequency;
+  // Delay = length - filter delay.
+  StkFloat delay = ( Stk::sampleRate() / frequency ) - loopFilter_.phaseDelay( frequency );
+  delayLine_.setDelay( delay );
 
-  if ( normalize ) {
-    // Normalize the filter gain ... not terribly efficient.
-    StkFloat real = 1 - radius + (a_[2] - radius) * cos(TWO_PI * 2 * frequency / Stk::sampleRate());
-    StkFloat imag = (a_[2] - radius) * sin(TWO_PI * 2 * frequency / Stk::sampleRate());
-    b_[0] = sqrt( pow(real, 2) + pow(imag, 2) );
-  }
+  this->setLoopGain( loopGain_ );
+
+  // Set the pluck position, which puts zeroes at position * length.
+  combDelay_.setDelay( 0.5 * pluckPosition_ * delay );
 }
 
-void TwoPole :: setCoefficients( StkFloat b0, StkFloat a1, StkFloat a2, bool clearState )
+void Twang :: setLoopGain( StkFloat loopGain )
 {
-  b_[0] = b0;
-  a_[1] = a1;
-  a_[2] = a2;
+  if ( loopGain < 0.0 || loopGain >= 1.0 ) {
+    oStream_ << "Twang::setLoopGain: parameter is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
 
-  if ( clearState ) this->clear();
+  loopGain_ = loopGain;
+  StkFloat gain = loopGain_ + (frequency_ * 0.000005);
+  if ( gain >= 1.0 ) gain = 0.99999;
+  loopFilter_.setGain( gain );
+}
+
+void Twang :: setPluckPosition( StkFloat position )
+{
+  if ( position < 0.0 || position > 1.0 ) {
+    oStream_ << "Twang::setPluckPosition: argument (" << position << ") is out of range!";
+    handleError( StkError::WARNING ); return;
+  }
+
+  pluckPosition_ = position;
 }
 
 } // stk namespace

@@ -1,103 +1,78 @@
 /***************************************************/
-/*! \class Twang
-    \brief STK enhanced plucked string class.
+/*! \class TubeBell
+    \brief STK tubular bell (orchestral chime) FM
+           synthesis instrument.
 
-    This class implements an enhanced plucked-string
-    physical model, a la Jaffe-Smith, Smith,
-    Karjalainen and others.  It includes a comb
-    filter to simulate pluck position.  The tick()
-    function takes an input sample, which is added
-    to the delayline input.  This can be used to
-    implement commuted synthesis (if the input
-    samples are derived from the impulse response of
-    a body filter) or feedback (as in an electric
-    guitar model).
+    This class implements two simple FM Pairs
+    summed together, also referred to as algorithm
+    5 of the TX81Z.
 
-    This is a digital waveguide model, making its
-    use possibly subject to patents held by Stanford
-    University, Yamaha, and others.
+    \code
+    Algorithm 5 is :  4->3--\
+                             + --> Out
+                      2->1--/
+    \endcode
 
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    Control Change Numbers: 
+       - Modulator Index One = 2
+       - Crossfade of Outputs = 4
+       - LFO Speed = 11
+       - LFO Depth = 1
+       - ADSR 2 & 4 Target = 128
+
+    The basic Chowning/Stanford FM patent expired
+    in 1995, but there exist follow-on patents,
+    mostly assigned to Yamaha.  If you are of the
+    type who should worry about this (making
+    money) worry away.
+
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Twang.h"
+#include "TubeBell.h"
 
 namespace stk {
 
-Twang :: Twang( StkFloat lowestFrequency )
+TubeBell :: TubeBell( void )
+  : FM()
 {
-  if ( lowestFrequency <= 0.0 ) {
-    oStream_ << "Twang::Twang: argument is less than or equal to zero!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
+  // Concatenate the STK rawwave path to the rawwave files
+  for ( unsigned int i=0; i<3; i++ )
+    waves_[i] = new FileLoop( (Stk::rawwavePath() + "sinewave.raw").c_str(), true );
+  waves_[3] = new FileLoop( (Stk::rawwavePath() + "fwavblnk.raw").c_str(), true );
 
-  this->setLowestFrequency( lowestFrequency );
+  this->setRatio(0, 1.0   * 0.995);
+  this->setRatio(1, 1.414 * 0.995);
+  this->setRatio(2, 1.0   * 1.005);
+  this->setRatio(3, 1.414 * 1.000);
 
-  std::vector<StkFloat> coefficients( 2, 0.5 );
-  loopFilter_.setCoefficients( coefficients );
+  gains_[0] = fmGains_[94];
+  gains_[1] = fmGains_[76];
+  gains_[2] = fmGains_[99];
+  gains_[3] = fmGains_[71];
 
-  loopGain_ = 0.995;
-  pluckPosition_ = 0.4;
-  this->setFrequency( 220.0 );
+  adsr_[0]->setAllTimes( 0.005, 4.0, 0.0, 0.04);
+  adsr_[1]->setAllTimes( 0.005, 4.0, 0.0, 0.04);
+  adsr_[2]->setAllTimes( 0.001, 2.0, 0.0, 0.04);
+  adsr_[3]->setAllTimes( 0.004, 4.0, 0.0, 0.04);
+
+  twozero_.setGain( 0.5 );
+  vibrato_.setFrequency( 2.0 );
+}  
+
+TubeBell :: ~TubeBell( void )
+{
 }
 
-void Twang :: clear( void )
+void TubeBell :: noteOn( StkFloat frequency, StkFloat amplitude )
 {
-  delayLine_.clear();
-  combDelay_.clear();
-  loopFilter_.clear();
-  lastOutput_ = 0.0;
-}
-
-void Twang :: setLowestFrequency( StkFloat frequency )
-{
-  unsigned long nDelays = (unsigned long) ( Stk::sampleRate() / frequency );
-  delayLine_.setMaximumDelay( nDelays + 1 );
-  combDelay_.setMaximumDelay( nDelays + 1 );
-}
-
-void Twang :: setFrequency( StkFloat frequency )
-{
-#if defined(_STK_DEBUG_)
-  if ( frequency <= 0.0 ) {
-    oStream_ << "Twang::setFrequency: argument is less than or equal to zero!";
-    handleError( StkError::WARNING ); return;
-  }
-#endif
-
-  frequency_ = frequency;
-  // Delay = length - filter delay.
-  StkFloat delay = ( Stk::sampleRate() / frequency ) - loopFilter_.phaseDelay( frequency );
-  delayLine_.setDelay( delay );
-
-  this->setLoopGain( loopGain_ );
-
-  // Set the pluck position, which puts zeroes at position * length.
-  combDelay_.setDelay( 0.5 * pluckPosition_ * delay );
-}
-
-void Twang :: setLoopGain( StkFloat loopGain )
-{
-  if ( loopGain < 0.0 || loopGain >= 1.0 ) {
-    oStream_ << "Twang::setLoopGain: parameter is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  loopGain_ = loopGain;
-  StkFloat gain = loopGain_ + (frequency_ * 0.000005);
-  if ( gain >= 1.0 ) gain = 0.99999;
-  loopFilter_.setGain( gain );
-}
-
-void Twang :: setPluckPosition( StkFloat position )
-{
-  if ( position < 0.0 || position > 1.0 ) {
-    oStream_ << "Twang::setPluckPosition: argument (" << position << ") is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  pluckPosition_ = position;
+  gains_[0] = amplitude * fmGains_[94];
+  gains_[1] = amplitude * fmGains_[76];
+  gains_[2] = amplitude * fmGains_[99];
+  gains_[3] = amplitude * fmGains_[71];
+  this->setFrequency( frequency );
+  this->keyOn();
 }
 
 } // stk namespace

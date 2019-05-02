@@ -1,92 +1,53 @@
 /***************************************************/
-/*! \class Sitar
-    \brief STK sitar string model class.
+/*! \class SingWave
+    \brief STK "singing" looped soundfile class.
 
-    This class implements a sitar plucked string
-    physical model based on the Karplus-Strong
-    algorithm.
+    This class loops a specified soundfile and modulates it both
+    periodically and randomly to produce a pitched musical sound, like
+    a simple voice or violin.  In general, it is not be used alone
+    because of "munchkinification" effects from pitch shifting.
+    Within STK, it is used as an excitation source for other
+    instruments.
 
-    This is a digital waveguide model, making its
-    use possibly subject to patents held by
-    Stanford University, Yamaha, and others.
-    There exist at least two patents, assigned to
-    Stanford, bearing the names of Karplus and/or
-    Strong.
-
-    by Perry R. Cook and Gary P. Scavone, 1995--2017.
+    by Perry R. Cook and Gary P. Scavone, 1995--2019.
 */
 /***************************************************/
 
-#include "Sitar.h"
+#include "SingWave.h"
 
 namespace stk {
-
-Sitar :: Sitar( StkFloat lowestFrequency )
+ 
+SingWave :: SingWave( std::string fileName, bool raw )
 {
-  if ( lowestFrequency <= 0.0 ) {
-    oStream_ << "Sitar::Sitar: argument is less than or equal to zero!";
-    handleError( StkError::FUNCTION_ARGUMENT );
-  }
+  // An exception could be thrown here.
+  wave_.openFile( fileName, raw );
 
-  unsigned long length = (unsigned long) ( Stk::sampleRate() / lowestFrequency + 1 );
-  delayLine_.setMaximumDelay( length );
-  delay_ = 0.5 * length;
-  delayLine_.setDelay( delay_ );
-  targetDelay_ = delay_;
+	rate_ = 1.0;
+	sweepRate_ = 0.001;
 
-  loopFilter_.setZero( 0.01 );
-  loopGain_ = 0.999;
+	modulator_.setVibratoRate( 6.0 );
+	modulator_.setVibratoGain( 0.04 );
+	modulator_.setRandomGain( 0.005 );
 
-  envelope_.setAllTimes( 0.001, 0.04, 0.0, 0.5 );
-  this->clear();
+	this->setFrequency( 75.0 );
+	pitchEnvelope_.setRate( 1.0 );
+	this->tick();
+	this->tick();
+	pitchEnvelope_.setRate( sweepRate_ * rate_ );
 }
 
-Sitar :: ~Sitar( void )
+SingWave :: ~SingWave()
 {
 }
 
-void Sitar :: clear( void )
+void SingWave :: setFrequency( StkFloat frequency )
 {
-  delayLine_.clear();
-  loopFilter_.clear();
-}
-
-void Sitar :: setFrequency( StkFloat frequency )
-{
-#if defined(_STK_DEBUG_)
-  if ( frequency <= 0.0 ) {
-    oStream_ << "Sitar::setFrequency: parameter is less than or equal to zero!";
-    handleError( StkError::WARNING ); return;
-  }
-#endif
-
-  targetDelay_ = (Stk::sampleRate() / frequency);
-  delay_ = targetDelay_ * (1.0 + (0.05 * noise_.tick()));
-  delayLine_.setDelay( delay_ );
-  loopGain_ = 0.995 + (frequency * 0.0000005);
-  if ( loopGain_ > 0.9995 ) loopGain_ = 0.9995;
-}
-
-void Sitar :: pluck( StkFloat amplitude )
-{
-  envelope_.keyOn();
-}
-
-void Sitar :: noteOn( StkFloat frequency, StkFloat amplitude )
-{
-  this->setFrequency( frequency );
-  this->pluck( amplitude );
-  amGain_ = 0.1 * amplitude;
-}
-
-void Sitar :: noteOff( StkFloat amplitude )
-{
-  if ( amplitude < 0.0 || amplitude > 1.0 ) {
-    oStream_ << "Sitar::noteOff: amplitude is out of range!";
-    handleError( StkError::WARNING ); return;
-  }
-
-  loopGain_ = (StkFloat) 1.0 - amplitude;
+	StkFloat temp = rate_;
+	rate_ = wave_.getSize() * frequency / Stk::sampleRate();
+	temp -= rate_;
+	if ( temp < 0) temp = -temp;
+	pitchEnvelope_.setTarget( rate_ );
+	pitchEnvelope_.setRate( sweepRate_ * temp );
 }
 
 } // stk namespace
