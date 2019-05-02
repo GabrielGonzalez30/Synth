@@ -8,6 +8,15 @@
 
 using namespace stk;
 
+namespace tools {
+	bool is_number(const std::string& s)
+	{
+		std::string::const_iterator it = s.begin();
+		while (it != s.end() && std::isdigit(*it)) ++it;
+		return !s.empty() && it == s.end();
+	}
+}
+
 namespace Synth {
 
 	class Synth {
@@ -117,9 +126,36 @@ namespace Synth {
 						play(stream)
 						pause(stream)
 						removeStream(stream)
-						
-
 					*/
+
+					Stream* stream = (SynthesizerStream*)streamIDs->at(pr->ID);
+					if (pr->function == "play") {
+						if (tools::is_number(pr->params->at(0))) {
+							int duration = std::stoi(pr->params->at(0));
+							stream->play(duration);
+							error = 0;
+							break;
+						}
+						else {
+							stream->play(100000);
+							error = 0;
+							break;
+						}
+						error = 1;
+						break;
+					}
+					else if (pr->function == "pause") {
+						stream->pause();
+						error = 0;
+						break;
+					}
+					else if (pr->function == "removeStream") {
+						//streamIDs->erase(stream);
+						error = 0;
+						break;
+					}
+					else
+						error = 1;
 					break;
 				}
 				default:
