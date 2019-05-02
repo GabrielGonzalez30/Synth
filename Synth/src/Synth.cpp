@@ -1,15 +1,23 @@
 #include <unordered_map>
 #include <string>
 #include <iostream>
-#include <cstdlib>
-#include "RtWvOut.h"
 #include "streams/SynthesizerStream.h"
+#include "streams/Stream.h"
 #include "lexer/Parser.h"
 #include "Audio.h"
 #include "fstream"
+#include <memory>
 
-using namespace std;
 using namespace stk;
+
+namespace tools {
+	bool is_number(const std::string& s)
+	{
+		std::string::const_iterator it = s.begin();
+		while (it != s.end() && std::isdigit(*it)) ++it;
+		return !s.empty() && it == s.end();
+	}
+}
 
 namespace Synth {
 
@@ -17,17 +25,19 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
-		~Synth() { delete streamIDs; }
+		Synth(): streamIDs(new unordered_map<std::string, std::shared_ptr<Stream>>()), audio(Audio(streamIDs)), parser(Parser()) {}
+		~Synth() { 
+			delete streamIDs;  
+		}
 
 		void TerminalInterpreter() {
 			cout << "Welcome to Synth!" << endl;
 			while (1) { //aqui algo debe de haber por si hay un fatal error
-				cout << ">" << endl;
+				cout << ">>";
 
 				//get the next line
-				string line;
-				getline(cin, line);
+				std::string line;
+				std::getline(cin, line);
 
 				//parse the line
 				ParsedResult* pr = parser.process(line);
@@ -65,9 +75,13 @@ namespace Synth {
 		Audio& getAudio() {
 			return audio;
 		}
+
+		unordered_map<std::string, std::shared_ptr<Stream>>* getIDs() {
+			return streamIDs;
+		}
 		
 	private:
-		unordered_map<string, Stream*>* streamIDs;
+		unordered_map<std::string, std::shared_ptr<Stream>>* streamIDs;
 		Parser parser;
 		Audio audio;
 
@@ -78,15 +92,112 @@ namespace Synth {
 				//HERE GOES ALL THE HARD CODED FUNCTIONALITY
 				switch (pr->typeOfStatement) {
 
-				case 0: { //InitStream
+				case Parser::InitStream: { 
+					std::shared_ptr<Stream> stream;
+					string typeOfStream = pr->params->at(0);
+
+					if (typeOfStream == "Synthesizer") {
+						stream = std::make_shared<SynthesizerStream>();
+						//audio.setForAddition(pr->ID, stream);
+						streamIDs->insert(pair<string, shared_ptr<Stream>>(pr->ID, stream));
+						error = 0;
+						break;
+					}
+
+					else if (typeOfStream == "Audio") {
+						stream = std::make_shared<SynthesizerStream>();
+						streamIDs->insert(pair<string, shared_ptr<Stream>>(pr->ID, stream));
+						error = 0;
+						break;
+					}
+					error = 1;
 					break;
 				}
-				case 1: { //Modification
+				case Parser::Modification: { //Modification
+					string  parameters = pr->params->at(0);
 
+					auto ID = std::dynamic_pointer_cast<SynthesizerStream>(streamIDs->at(pr->ID)); // synthesizer ayy lmao
+
+					if (pr->function == "setFrequency") {
+						if (tools::is_number(parameters)) {
+							float frequency = std::stof(parameters);
+							ID->setFrequency(frequency);
+							error = 0;
+							break;
+						}
+
+						else {
+							error = 1;
+							break;
+						}
+					}
+					if (pr->function == "setWave") {
+						if (parameters == "Sine") {
+							ID->addSine(stk::SineWave());
+							error = 0;
+							break;
+						}
+
+						if (parameters == "Saw") {
+							ID->addTrig(stk::BlitSaw());
+							error = 0;
+							break;
+						}
+
+						if (parameters == "Square") {
+							ID->addSqrt(stk::BlitSquare());
+							error = 0;
+							break;
+						}
+
+						else {
+							error = 1;
+							break;
+						}
+					}
+
+					error = 1;
 					break;
 				}
-				case 2: { //General Statement
+				case Parser::GeneralStatement: { //General Statement
+					//TODO: Tua & Jaime
+					/*
+						GENERAL FUNCTIONS
 
+						play(stream, number)
+						play(stream)
+						pause(stream)
+						removeStream(stream)
+					*/
+
+					auto stream = std::dynamic_pointer_cast<SynthesizerStream>(streamIDs->at(pr->params->at(0)));
+					if (pr->function == "play") {
+						if (pr->params->size() == 2) {
+							if (tools::is_number(pr->params->at(1))) {
+								int duration = std::stoi(pr->params->at(1));
+								stream->play(duration);
+								error = 0;
+								break;
+							}
+						}
+						else if (pr->params->size() == 1) {
+							stream->play(100000);
+							error = 0;
+							break;
+						}
+						error = 1;
+						break;
+					}
+					else if (pr->function == "pause" && pr->params->size() == 1) {
+						stream->pause();
+						error = 0;
+					}
+					else if (pr->function == "removeStream" && pr->params->size() == 1) {
+						audio.setForDeletion(pr->params->at(0));
+						error = 0;
+					}
+					else
+						error = 1;
 					break;
 				}
 				default:
@@ -105,28 +216,8 @@ namespace Synth {
 	};
 
 	struct SynthError {
-		//TODO
+		//TODO: Gabriel
 	};
-}
-
-int synthTest2() {
-	Synth::Synth s;
-	Synth::SynthesizerStream synth;
-	Synth::SynthesizerStream otherSynth;
-
-	synth.addSine(200);
-	otherSynth.addTrig(600);
-
-	s.getAudio().addStream(synth);
-	s.getAudio().addStream(otherSynth);
-
-	s.getAudio().startStream();
-
-	cin.get();
-
-	s.getAudio().stopStream();
-
-	return 0;
 }
 
 int main(int argc, char** argv) {
