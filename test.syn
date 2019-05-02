@@ -1,0 +1,7 @@
+InitStream s1 as Synthesizer
+As s1 setWave(Sine)
+As s1 setFrequency(800)
+InitStream s2 as Synthesizer
+As s2 setWave(Square)
+As s1 setFrequency(400)
+play(s1, 2)

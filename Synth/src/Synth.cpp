@@ -53,8 +53,8 @@ namespace Synth {
 			}
 		}
 
-		void FileInterpreter(int argCounter, char** arguments) {
-			std::ifstream infile(arguments[0]);
+		void FileInterpreter(int argCounter, char* argument) {
+			std::ifstream infile(argument);
 			std:string line;
 			ParsedResult* pr;
 			int error;
@@ -65,6 +65,7 @@ namespace Synth {
 					handleError(error);
 				}
 			}
+			infile.close();
 		}
 
 		//methods
@@ -133,19 +134,19 @@ namespace Synth {
 					}
 					if (pr->function == "setWave") {
 						if (parameters == "Sine") {
-							ID->addSine(stk::SineWave());
+							ID->addSine(200.0);//Default wave freq
 							error = 0;
 							break;
 						}
 
 						if (parameters == "Saw") {
-							ID->addTrig(stk::BlitSaw());
+							ID->addTrig(200.0);
 							error = 0;
 							break;
 						}
 
 						if (parameters == "Square") {
-							ID->addSqrt(stk::BlitSquare());
+							ID->addSqrt(200.0);
 							error = 0;
 							break;
 						}
@@ -176,6 +177,7 @@ namespace Synth {
 							if (tools::is_number(pr->params->at(1))) {
 								int duration = std::stoi(pr->params->at(1));
 								stream->play(duration);
+								Sleep(duration*1000);
 								error = 0;
 								break;
 							}
@@ -222,7 +224,9 @@ namespace Synth {
 
 int main(int argc, char** argv) {
 	Synth::Synth synth;
-	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv[1]);
+	//char path[] = "C:\\Users\\Owrn\\Documents\\gitRepos\\PL_Project\\test.syn";
+	//synth.FileInterpreter(0, path);
 }
 
 
