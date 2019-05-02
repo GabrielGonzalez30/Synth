@@ -130,16 +130,16 @@ namespace Synth {
 
 					Stream* stream = (SynthesizerStream*)streamIDs->at(pr->params->at(0));
 					if (pr->function == "play") {
-						if (pr->params->size == 2) { //fix if
-							if (tools::is_number(pr->params->at(0))) {
-								int duration = std::stoi(pr->params->at(0));
+						if (pr->params->size == 2) {
+							if (tools::is_number(pr->params->at(1))) {
+								int duration = std::stoi(pr->params->at(1));
 								stream->play(duration);
 								error = 0;
 								break;
 							}
 						}
-						else if (pr->params->size == 1) { //fix elif
-							stream->play(100000);
+						else if (pr->params->size == 1) {
+							stream->play(INT_MAX);
 							error = 0;
 							break;
 						}
@@ -151,7 +151,8 @@ namespace Synth {
 						error = 0;
 					}
 					else if (pr->function == "removeStream" && pr->params->size == 1) {
-						//streamIDs->erase(stream);
+						delete stream;
+						streamIDs->erase(pr->params->at(0));
 						error = 0;
 					}
 					else
