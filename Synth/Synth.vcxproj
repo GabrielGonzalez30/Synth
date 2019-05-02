@@ -162,6 +162,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\lib\lexertk\lexertk.h" />
+    <ClInclude Include="src\Audio.h" />
     <ClInclude Include="src\lexer\Parser.h" />
     <ClInclude Include="src\streams\AudioFileStream.h" />
     <ClInclude Include="src\streams\AudioInputStream.h" />

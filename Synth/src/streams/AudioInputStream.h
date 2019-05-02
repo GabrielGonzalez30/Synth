@@ -3,7 +3,7 @@
 #include "RtwvOut.h"
 
 namespace Synth {
-	class AudioInputStream : Stream
+	class AudioInputStream : public Stream
 	{
 	public:
 		AudioInputStream();
