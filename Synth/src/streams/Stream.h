@@ -16,6 +16,10 @@ namespace Synth {
 			stopTime = currentTime + duration;
 		}
 
+		void pause() {
+			stopTime = 0;
+		}
+
 		virtual float tick();
 	};
 }
