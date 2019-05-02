@@ -79,7 +79,6 @@ namespace Synth {
 				switch (pr->typeOfStatement) {
 
 				case 0: { //InitStream
-
 					break;
 				}
 				case 1: { //Modification
@@ -110,53 +109,12 @@ namespace Synth {
 	};
 }
 
-
-int synthTest() {
-	// Set the global sample rate before creating class instances.
-	Stk::setSampleRate(44100.0);
-	Stk::showWarnings(true);
-	int nFrames = 100000;
-	RtWvOut* dac = 0;
-
-	try {
-		// Define and open the default realtime output device for one-channel playback
-		dac = new RtWvOut(1);
-	}
-	catch (StkError&) {
-		exit(1);
-	}
-
-	//Adding 3 sine waves
-	Synth::SynthesizerStream track;
-	track.addSine(440);
-	track.addSine(220);
-	track.addSine(880);
-
-
-
-	//Playing
-	for (int i = 0; i < nFrames; i++) {
-		try {
-			dac->tick(track.tick());
-		}
-		catch (StkError&) {
-			goto cleanup;
-		}
-	}
-
-	goto cleanup;
-
-cleanup:
-	delete dac;
-	return 0;
-}
 int synthTest2() {
 	Synth::Synth s;
 	Synth::SynthesizerStream synth;
 	Synth::SynthesizerStream otherSynth;
 
 	synth.addSine(200);
-	synth.addSqrt(300);
 	otherSynth.addTrig(600);
 
 	s.getAudio().addStream(synth);
@@ -172,7 +130,6 @@ int synthTest2() {
 }
 
 int main(int argc, char** argv) {
-	//synthTest2();
 	Synth::Synth synth;
 	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
 }
