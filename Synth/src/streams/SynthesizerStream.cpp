@@ -1,8 +1,7 @@
 #include "SynthesizerStream.h"
 
-
-
 namespace Synth {
+
 
 
 	SynthesizerStream::SynthesizerStream() : s_index(0), sq_index(0), t_index(0) {}
@@ -27,6 +26,18 @@ namespace Synth {
 		b.setFrequency(f);
 		trig_waves[t_index] = b;
 		t_index++;
+	}
+
+	void  SynthesizerStream::setFrequency(float number) {
+		for (unsigned int i = 0; i < s_index; i++) {
+			sine_waves[i].setFrequency(number);
+		}
+		for (unsigned int i = 0; i < sq_index; i++) {
+			sqrt_waves[i].setFrequency(number);
+		}
+		for (unsigned int i = 0; i < t_index; i++) {
+			trig_waves[i].setFrequency(number);
+		}
 	}
 
 	float SynthesizerStream::tick() {
