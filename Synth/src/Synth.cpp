@@ -83,7 +83,7 @@ namespace Synth {
 				//HERE GOES ALL THE HARD CODED FUNCTIONALITY
 				switch (pr->typeOfStatement) {
 
-				case 0: { 
+				case Parser::InitStream: { 
 					Stream* stream;
 					string typeOfStream = pr->params->at(0);
 
@@ -96,11 +96,11 @@ namespace Synth {
 					else if (typeOfStream == "Audio") {
 						stream = new SynthesizerStream;
 						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
-
 						error = 0;
+						break;
 					}
 				}
-				case 1: { //Modification
+				case Parser::Modification: { //Modification
 					string  parameters = pr->params->at(0);
 					SynthesizerStream* ID = (SynthesizerStream*)streamIDs->at(pr->ID); // synthesizer ayy lmao
 
@@ -112,8 +112,10 @@ namespace Synth {
 							break;
 						}
 
-						else
+						else {
 							error = 1;
+							break;
+						}
 					}
 					if (pr->function == "setWave") {
 						if (parameters == "Sine") {
@@ -134,14 +136,16 @@ namespace Synth {
 							break;
 						}
 
-						else
+						else {
 							error = 1;
+							break;
+						}
 					}
 
 					error = 1;
 					break;
 				}
-				case 2: { //General Statement
+				case Parser::GeneralStatement: { //General Statement
 					//TODO: Tua & Jaime
 					/*
 						GENERAL FUNCTIONS
