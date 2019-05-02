@@ -2,11 +2,10 @@
 
 namespace Synth {
 
-	Audio::Audio(Synth* synthRef) : Audio(synthRef, 48000, 512) {
+	Audio::Audio() : Audio(48000, 512) {
 	}
 
-	Audio::Audio(Synth* synthRef, int sampleRate, int bufferFrames) :
-				synthRef(synthRef),
+	Audio::Audio(int sampleRate, int bufferFrames) : 
 				engine(RtAudio()),									   
 				sampleRate(sampleRate),										   
 				bufferFrames(bufferFrames),										   
@@ -28,7 +27,7 @@ namespace Synth {
 
 	inline void Audio::openAudioStream() {
 		if (!engine.isStreamOpen()) {
-			engine.openStream(&oParams, NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, calcSound, synthRef->getIDs());
+			engine.openStream(&oParams, NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, calcSound, &streams);
 		}
 	}
 
@@ -40,6 +39,12 @@ namespace Synth {
 
 	inline bool Audio::hasAudioDevices() {
 		return (engine.getDeviceCount() > 0);
+	}
+
+	void Audio::addStream(Stream& s) {
+		closeAudioStream();
+		streams.push_back(&s);
+		openAudioStream();
 	}
 
 	void Audio::startStream() {
@@ -65,9 +70,7 @@ namespace Synth {
 			//get the sounds from the streams
 			float sum = 0;
 			for (Stream* s : *streams) {
-				if (s->shouldPlay(streamTime)) {
-					sum += s->tick();
-				}
+				sum += s->tick();
 			}
 
 			sum /= streams->size();

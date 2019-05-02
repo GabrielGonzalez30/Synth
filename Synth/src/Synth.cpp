@@ -16,14 +16,13 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio(this)), parser(Parser()) {}
+		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
 		~Synth() { 
 			delete streamIDs;  }
 
 		void TerminalInterpreter() {
-			int error = 0;
 			cout << "Welcome to Synth!" << endl;
-			while (error == 0) { //aqui algo debe de haber por si hay un fatal error
+			while (1) { //aqui algo debe de haber por si hay un fatal error
 				cout << ">" << endl;
 
 				//get the next line
@@ -34,7 +33,7 @@ namespace Synth {
 				ParsedResult* pr = parser.process(line);
 
 				//execute the line
-				error = evaluate(pr);
+				int error = evaluate(pr);
 				if (error > 0) {
 					handleError(error);
 				}
@@ -55,10 +54,6 @@ namespace Synth {
 
 		Audio& getAudio() {
 			return audio;
-		}
-
-		unordered_map<string, Stream*>* getIDs() {
-			return streamIDs;
 		}
 		
 	private:
@@ -174,6 +169,26 @@ cleanup:
 int synthTest2() {
 	Synth::Synth s;
 	Synth::SynthesizerStream synth;
+	Synth::SynthesizerStream otherSynth;
+	stk::SineWave sine;
+	sine.setFrequency(200);
+	stk::BlitSquare square;
+	square.setFrequency(300);
+	stk::BlitSaw saw;
+	saw.setFrequency(600);
+
+	synth.addSine(sine);
+	//synth.addSqrt(square);
+	otherSynth.addTrig(saw);
+
+	s.getAudio().addStream(synth);
+	s.getAudio().addStream(otherSynth);
+
+	s.getAudio().startStream();
+
+	cin.get();
+
+	s.getAudio().stopStream();
 
 	return 0;
 }
