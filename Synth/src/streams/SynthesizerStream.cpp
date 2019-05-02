@@ -7,21 +7,21 @@ namespace Synth {
 	SynthesizerStream::SynthesizerStream() : s_index(0), sq_index(0), t_index(0) {}
 	SynthesizerStream::~SynthesizerStream() {}
 
-	void SynthesizerStream::addSine(int f) {
+	void SynthesizerStream::addSine(float f) {
 		stk::SineWave s;
 		s.setFrequency(f);
 		sine_waves[s_index] = s;
 		s_index++;
 	}
 
-	void SynthesizerStream::addSqrt(int f) {
+	void SynthesizerStream::addSqrt(float f) {
 		stk::BlitSquare b;
 		b.setFrequency(f);
 		sqrt_waves[sq_index] = b;
 		sq_index++;
 	}
 
-	void SynthesizerStream::addTrig(int f) {
+	void SynthesizerStream::addTrig(float f) {
 		stk::BlitSaw b;
 		b.setFrequency(f);
 		trig_waves[t_index] = b;
