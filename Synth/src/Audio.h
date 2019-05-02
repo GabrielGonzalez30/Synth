@@ -2,9 +2,8 @@
 #include "RtAudio.h"
 #include "Stk.h"
 #include "streams/Stream.h"
-#include <vector>
+#include <unordered_map>
 
-using namespace stk;
 using namespace std;
 
 namespace Synth {
@@ -14,12 +13,9 @@ namespace Synth {
 
 	class Audio {
 	public:
-		Audio();
-		Audio(int sampleRate, int bufferRate);
+		Audio(unordered_map<std::string, Stream*>* streamIDs);
+		Audio(unordered_map<std::string, Stream*>* streamIDs, int sampleRate, int bufferRate);
 		~Audio();
-
-		void addStream(Stream& s);
-		//inline void removeStream(Stream& s);
 
 		void startStream();
 		void stopStream();
@@ -31,7 +27,8 @@ namespace Synth {
 		unsigned int bufferBytes;
 		RtAudio engine;
 		RtAudio::StreamParameters iParams, oParams;
-		vector<Stream*> streams;
+
+		unordered_map<std::string, Stream*>* streamIDs;
 
 		inline bool hasAudioDevices();
 

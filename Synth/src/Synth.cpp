@@ -1,13 +1,11 @@
 #include <unordered_map>
 #include <string>
 #include <iostream>
-#include <cstdlib>
-#include "RtWvOut.h"
 #include "streams/SynthesizerStream.h"
+#include "streams/Stream.h"
 #include "lexer/Parser.h"
-#include "Audio.h";
+#include "Audio.h"
 
-using namespace std;
 using namespace stk;
 
 namespace Synth {
@@ -16,18 +14,22 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
+		Synth(): streamIDs(new unordered_map<std::string, Stream*>()), audio(Audio(streamIDs)), parser(Parser()) {}
 		~Synth() { 
-			delete streamIDs;  }
+			for (auto it = streamIDs->begin(); it != streamIDs->end(); it++) {
+				delete it->second;
+			}
+			delete streamIDs;  
+		}
 
 		void TerminalInterpreter() {
 			cout << "Welcome to Synth!" << endl;
 			while (1) { //aqui algo debe de haber por si hay un fatal error
-				cout << ">" << endl;
+				cout << ">>";
 
 				//get the next line
-				string line;
-				getline(cin, line);
+				std::string line;
+				std::getline(cin, line);
 
 				//parse the line
 				ParsedResult* pr = parser.process(line);
@@ -55,9 +57,13 @@ namespace Synth {
 		Audio& getAudio() {
 			return audio;
 		}
+
+		unordered_map<std::string, Stream*>* getIDs() {
+			return streamIDs;
+		}
 		
 	private:
-		unordered_map<string, Stream*>* streamIDs;
+		unordered_map<std::string, Stream*>* streamIDs;
 		Parser parser;
 		Audio audio;
 
@@ -74,13 +80,13 @@ namespace Synth {
 
 					if (typeOfStream == "Synthesizer") {
 						stream = new SynthesizerStream;
-						streamIDs->insert(pair(pr->ID, stream));
+						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
 						error = 0;
 					}
 
 					else if (typeOfStream == "Audio") {
 						stream = new SynthesizerStream;
-						streamIDs->insert(pair(pr->ID, stream));
+						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
 
 						error = 0;
 					}
@@ -98,6 +104,8 @@ namespace Synth {
 
 						
 					*/
+
+
 					break;
 				}
 				case 2: { //General Statement
@@ -135,80 +143,29 @@ namespace Synth {
 }
 
 
-int synthTest() {
-	// Set the global sample rate before creating class instances.
-	Stk::setSampleRate(44100.0);
-	Stk::showWarnings(true);
-	int nFrames = 100000;
-	RtWvOut* dac = 0;
-
-	try {
-		// Define and open the default realtime output device for one-channel playback
-		dac = new RtWvOut(1);
-	}
-	catch (StkError&) {
-		exit(1);
-	}
-
-	//Adding 3 sine waves
-	SineWave* s = new SineWave();
-	s->setFrequency(440);
-	Synth::SynthesizerStream track;
-	track.addSine(*s);
-	s->setFrequency(220);
-	track.addSine(*s);
-	s->setFrequency(880);
-	track.addSine(*s);
-
-
-
-	//Playing
-	for (int i = 0; i < nFrames; i++) {
-		try {
-			dac->tick(track.tick());
-		}
-		catch (StkError&) {
-			goto cleanup;
-		}
-	}
-
-	goto cleanup;
-
-cleanup:
-	delete dac;
-	delete s;
-	return 0;
-}
-int synthTest2() {
+int synthTest3() {
 	Synth::Synth s;
-	Synth::SynthesizerStream synth;
-	Synth::SynthesizerStream otherSynth;
-	stk::SineWave sine;
-	sine.setFrequency(200);
-	stk::BlitSquare square;
-	square.setFrequency(300);
-	stk::BlitSaw saw;
-	saw.setFrequency(600);
 
-	synth.addSine(sine);
-	//synth.addSqrt(square);
-	otherSynth.addTrig(saw);
+	Synth::Stream* synth = new Synth::SynthesizerStream();
+	string ahh = "ahh";
 
-	s.getAudio().addStream(synth);
-	s.getAudio().addStream(otherSynth);
+	s.getIDs()->insert(pair<std::string, Synth::Stream*>(ahh, synth));
 
-	s.getAudio().startStream();
-
+	((Synth::SynthesizerStream*) synth)->addSine(stk::SineWave());
+	//((Synth::SynthesizerStream*) synth)->setFrequency(440);
+	Sleep(1000);
+	synth->play(4);
+	
 	cin.get();
 
-	s.getAudio().stopStream();
 
 	return 0;
 }
 
 int main(int argc, char** argv) {
-	Synth::Synth synth;
-	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+	//Synth::Synth synth;
+	//argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+	synthTest3();
 }
 
 
