@@ -21,6 +21,7 @@ namespace Synth {
 		}
 
 		virtual float tick();
+
 	};
 }
 

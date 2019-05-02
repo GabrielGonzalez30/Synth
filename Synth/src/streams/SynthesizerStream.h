@@ -10,9 +10,9 @@ namespace Synth {
 	public:
 		SynthesizerStream();
 		~SynthesizerStream();
-		void addSine(stk::SineWave s);
-		void addSqrt(stk::BlitSquare b);
-		void addTrig(stk::BlitSaw b);
+		void addSine(int f);
+		void addSqrt(int f);
+		void addTrig(int f);
 		virtual float tick();
 
 		void setFrequency(float number);

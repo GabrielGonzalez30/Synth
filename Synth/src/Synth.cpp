@@ -5,6 +5,7 @@
 #include "streams/Stream.h"
 #include "lexer/Parser.h"
 #include "Audio.h"
+#include "fstream"
 #include <memory>
 
 using namespace stk;
@@ -53,7 +54,17 @@ namespace Synth {
 		}
 
 		void FileInterpreter(int argCounter, char** arguments) {
-			//TODO: Pedro
+			std::ifstream infile(arguments[0]);
+			std:string line;
+			ParsedResult* pr;
+			int error;
+			while(std::getline(infile, line)){
+				pr = parser.process(line);
+				error = evaluate(pr);
+				if (error > 0) {
+					handleError(error);
+				}
+			}
 		}
 
 		//methods
@@ -209,30 +220,9 @@ namespace Synth {
 	};
 }
 
-
-int synthTest3() {
-	Synth::Synth s;
-
-	Synth::Stream* synth = new Synth::SynthesizerStream();
-	string ahh = "ahh";
-
-	s.getIDs()->insert(pair<std::string, Synth::Stream*>(ahh, synth));
-
-	((Synth::SynthesizerStream*) synth)->addSine(stk::SineWave());
-	//((Synth::SynthesizerStream*) synth)->setFrequency(440);
-	Sleep(1000);
-	synth->play(4);
-	
-	cin.get();
-
-
-	return 0;
-}
-
 int main(int argc, char** argv) {
 	Synth::Synth synth;
 	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
-	//synthTest3();
 }
 
 
