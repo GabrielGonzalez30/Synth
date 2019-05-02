@@ -2,11 +2,14 @@
 
 namespace Synth {
 
-	Audio::Audio(unordered_map<std::string, Stream*>* streamIDs) : Audio(streamIDs, 48000, 512) {
+	Audio::Audio(unordered_map<std::string, std::shared_ptr<Stream>>* streamIDs) : Audio(streamIDs, 48000, 512) {
 	}
 
-	Audio::Audio(unordered_map<std::string, Stream*>* streamIDs, int sampleRate, int bufferFrames) :
+	Audio::Audio(unordered_map<std::string, std::shared_ptr<Stream>>* streamIDs, int sampleRate, int bufferFrames) :
+				//addQueue(queue<pair<string, shared_ptr<Stream>>>()),
+				deleteQueue(queue<string>()),
 				streamIDs(streamIDs),
+				data(CalcSoundData()),
 				engine(RtAudio()),									   
 				sampleRate(sampleRate),										   
 				bufferFrames(bufferFrames),										   
@@ -30,7 +33,10 @@ namespace Synth {
 
 	inline void Audio::openAudioStream() {
 		if (!engine.isStreamOpen()) {
-			engine.openStream(&oParams, NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, calcSound, streamIDs);
+			//data.aQueue = &addQueue;
+			data.dQueue = &deleteQueue;
+			data.sIDs = streamIDs;
+			engine.openStream(&oParams, NULL, RTAUDIO_FLOAT64, sampleRate, &bufferFrames, calcSound, (void*) &data);
 		}
 	}
 
@@ -57,10 +63,25 @@ namespace Synth {
 		double streamTime, RtAudioStreamStatus status, void* data) {
 
 		//setup casts...
-		unordered_map<std::string, Stream*>* streams = (unordered_map<std::string, Stream*>*) data;
+		CalcSoundData* csd = (CalcSoundData*)data;
 		stk::FLOAT64* out = (stk::FLOAT64*) outputBuffer;
-		//if (status) std::cout << "Stream over/underflow detected." << std::endl;
+		
+		//get data
+		auto* streams = csd->sIDs;
+		//auto* addQueue = csd->aQueue;
+		auto* deleteQueue = csd->dQueue;
 
+		/*while (!addQueue->empty()) {
+			pair<string, shared_ptr<Stream>>& el = addQueue->front();
+			streams->insert(el);
+			addQueue->pop();
+		}*/
+
+		while (!deleteQueue->empty()) {
+			string& s = deleteQueue->front();
+			streams->erase(s);
+			deleteQueue->pop();
+		}
 
 		//calculate new buffer
 		for (int i = 0; i < nBufferFrames; i++) {

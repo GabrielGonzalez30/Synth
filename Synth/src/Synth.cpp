@@ -5,6 +5,7 @@
 #include "streams/Stream.h"
 #include "lexer/Parser.h"
 #include "Audio.h"
+#include <memory>
 
 using namespace stk;
 
@@ -23,11 +24,8 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<std::string, Stream*>()), audio(Audio(streamIDs)), parser(Parser()) {}
+		Synth(): streamIDs(new unordered_map<std::string, std::shared_ptr<Stream>>()), audio(Audio(streamIDs)), parser(Parser()) {}
 		~Synth() { 
-			for (auto it = streamIDs->begin(); it != streamIDs->end(); it++) {
-				delete it->second;
-			}
 			delete streamIDs;  
 		}
 
@@ -67,12 +65,12 @@ namespace Synth {
 			return audio;
 		}
 
-		unordered_map<std::string, Stream*>* getIDs() {
+		unordered_map<std::string, std::shared_ptr<Stream>>* getIDs() {
 			return streamIDs;
 		}
 		
 	private:
-		unordered_map<std::string, Stream*>* streamIDs;
+		unordered_map<std::string, std::shared_ptr<Stream>>* streamIDs;
 		Parser parser;
 		Audio audio;
 
@@ -84,19 +82,20 @@ namespace Synth {
 				switch (pr->typeOfStatement) {
 
 				case Parser::InitStream: { 
-					Stream* stream;
+					std::shared_ptr<Stream> stream;
 					string typeOfStream = pr->params->at(0);
 
 					if (typeOfStream == "Synthesizer") {
-						stream = new SynthesizerStream;
-						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
+						stream = std::make_shared<SynthesizerStream>();
+						//audio.setForAddition(pr->ID, stream);
+						streamIDs->insert(pair<string, shared_ptr<Stream>>(pr->ID, stream));
 						error = 0;
 						break;
 					}
 
 					else if (typeOfStream == "Audio") {
-						stream = new SynthesizerStream;
-						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
+						stream = std::make_shared<SynthesizerStream>();
+						streamIDs->insert(pair<string, shared_ptr<Stream>>(pr->ID, stream));
 						error = 0;
 						break;
 					}
@@ -105,7 +104,8 @@ namespace Synth {
 				}
 				case Parser::Modification: { //Modification
 					string  parameters = pr->params->at(0);
-					SynthesizerStream* ID = (SynthesizerStream*)streamIDs->at(pr->ID); // synthesizer ayy lmao
+
+					auto ID = std::dynamic_pointer_cast<SynthesizerStream>(streamIDs->at(pr->ID)); // synthesizer ayy lmao
 
 					if (pr->function == "setFrequency") {
 						if (tools::is_number(parameters)) {
@@ -159,7 +159,7 @@ namespace Synth {
 						removeStream(stream)
 					*/
 
-					Stream* stream = (SynthesizerStream*)streamIDs->at(pr->params->at(0));
+					auto stream = std::dynamic_pointer_cast<SynthesizerStream>(streamIDs->at(pr->params->at(0)));
 					if (pr->function == "play") {
 						if (pr->params->size() == 2) {
 							if (tools::is_number(pr->params->at(1))) {
@@ -170,7 +170,7 @@ namespace Synth {
 							}
 						}
 						else if (pr->params->size() == 1) {
-							stream->play(INT_MAX);
+							stream->play(100000);
 							error = 0;
 							break;
 						}
@@ -182,8 +182,7 @@ namespace Synth {
 						error = 0;
 					}
 					else if (pr->function == "removeStream" && pr->params->size() == 1) {
-						delete stream;
-						streamIDs->erase(pr->params->at(0));
+						audio.setForDeletion(pr->params->at(0));
 						error = 0;
 					}
 					else
