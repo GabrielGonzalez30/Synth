@@ -101,20 +101,44 @@ namespace Synth {
 					}
 				}
 				case 1: { //Modification
-					//TODO: Tua & Jaime
+					string  parameters = pr->params->at(0);
+					SynthesizerStream* ID = (SynthesizerStream*)streamIDs->at(pr->ID); // synthesizer ayy lmao
 
-					/*
-						MODIFIER FUNCTIONS
+					if (pr->function == "setFrequency") {
+						if (tools::is_number(parameters)) {
+							float frequency = std::stof(parameters);
+							ID->setFrequency(frequency);
+							error = 0;
+							break;
+						}
 
-						<Synthesizer only> setFrequency(number)
-						<Synthesizer only> setAmplitude(number)
-						<Synthesizer only> setWave(Sine | Saw | Square)
+						else
+							error = 1;
+					}
+					if (pr->function == "setWave") {
+						if (parameters == "Sine") {
+							ID->addSine(stk::SineWave());
+							error = 0;
+							break;
+						}
 
+						if (parameters == "Saw") {
+							ID->addTrig(stk::BlitSaw());
+							error = 0;
+							break;
+						}
 
-						
-					*/
+						if (parameters == "Square") {
+							ID->addSqrt(stk::BlitSquare());
+							error = 0;
+							break;
+						}
 
+						else
+							error = 1;
+					}
 
+					error = 1;
 					break;
 				}
 				case 2: { //General Statement
