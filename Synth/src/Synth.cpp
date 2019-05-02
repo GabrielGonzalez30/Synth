@@ -132,22 +132,45 @@ namespace Synth {
 						}
 					}
 					if (pr->function == "setWave") {
-						if (parameters == "Sine") {
-							ID->addSine(stk::SineWave());
-							error = 0;
-							break;
+						if (parameters == "Sine") {//
+							if (tools::is_number(pr->params->at(1))) // if a number is selected Sine, 300
+							{
+								ID->addSine(std::stof(pr->params->at(1)));
+								error = 0;
+								break;
+
+							}
+							else { // default tone for Sine is 200
+								ID->addSine(200);
+								error = 0;
+								break;
+							}
 						}
 
-						if (parameters == "Saw") {
-							ID->addTrig(stk::BlitSaw());
-							error = 0;
-							break;
+						if (parameters == "Saw") { // if a number is selected Saw, 300
+							if (tools::is_number(pr->params->at(1))) {
+								ID->addTrig(std::stof(pr->params->at(1)));
+								error = 0;
+								break;
+							}
+							else { // default tone for Trig is 200
+								ID->addTrig(200);
+								error = 0;
+								break;
+							}
 						}
 
-						if (parameters == "Square") {
-							ID->addSqrt(stk::BlitSquare());
-							error = 0;
-							break;
+						if (parameters == "Square") { // if a number is selected Square, 300
+							if (tools::is_number(pr->params->at(1))) {
+								ID->addSqrt(std::stof(pr->params->at(1)));
+								error = 0;
+								break;
+							}
+							else { // default tone for Square is 200
+								ID->addSqrt(200);
+								error = 0;
+								break;
+							}
 						}
 
 						else {
