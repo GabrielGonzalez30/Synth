@@ -91,6 +91,7 @@ namespace Synth {
 						stream = new SynthesizerStream;
 						streamIDs->insert(pair<string, Stream*>(pr->ID, stream));
 						error = 0;
+						break;
 					}
 
 					else if (typeOfStream == "Audio") {
@@ -99,6 +100,8 @@ namespace Synth {
 						error = 0;
 						break;
 					}
+					error = 1;
+					break;
 				}
 				case Parser::Modification: { //Modification
 					string  parameters = pr->params->at(0);
