@@ -5,6 +5,7 @@
 #include "RtWvOut.h"
 #include "streams/SynthesizerStream.h"
 #include "lexer/Parser.h"
+#include "Audio.h";
 
 using namespace std;
 using namespace stk;
@@ -15,58 +16,91 @@ namespace Synth {
 
 	public:
 		//constructor, destructor
-		Synth(): streamIDs(new unordered_map<string, Stream*>()) {}
+		Synth(): streamIDs(new unordered_map<string, Stream*>()), audio(Audio()), parser(Parser()) {}
 		~Synth() { delete streamIDs; }
 
-		//instance variables
-		Parser parser;
+		void TerminalInterpreter() {
+			cout << "Welcome to Synth!" << endl;
+			while (1) { //aqui algo debe de haber por si hay un fatal error
+				cout << ">" << endl;
+
+				//get the next line
+				string line;
+				getline(cin, line);
+
+				//parse the line
+				ParsedResult* pr = parser.process(line);
+
+				//execute the line
+				int error = evaluate(pr);
+				if (error > 0) {
+					handleError(error);
+				}
+
+				//free parsed result
+				delete pr;
+			}
+		}
+
+		void FileInterpreter(int argCounter, char** arguments) {
+			//TODO
+		}
 
 		//methods
-		//void Interpreter();
-		
+		Parser& getParser() {
+			return parser;
+		}
 
+		Audio& getAudio() {
+			return audio;
+		}
+		
 	private:
 		unordered_map<string, Stream*>* streamIDs;
-		//SynthError* evaluate(string& line);
-		//void handleError(SynthError& error);
+		Parser parser;
+		Audio audio;
+
+		//evaluates the line, returns 0 if there was no error, other wise return error code
+		int evaluate(ParsedResult* pr) {
+			if (pr->error == 0) {
+				int error = 0;
+				//HERE GOES ALL THE HARD CODED FUNCTIONALITY
+				switch (pr->typeOfStatement) {
+
+				case 0: { //InitStream
+
+					break;
+				}
+				case 1: { //Modification
+
+					break;
+				}
+				case 2: { //General Statement
+
+					break;
+				}
+				default:
+					break;
+				}
+
+				return error;
+			} 
+			else {
+				return pr->error;
+			}
+		}
+		void handleError(int error) {
+
+		}
 	};
 
-	/*struct SynthError {
-
-	};*/
+	struct SynthError {
+		//TODO
+	};
 }
 
-int main() {
 
-	/*Synth::Synth s;
-
-	while (1) {
-		//get the next line
-
-		//parse the line
-
-		//check what function does it need to do
-
-		//execute function
-
-		//free parsed result
-
-
-		cout << ">> ";
-		string line;
-		getline(cin, line);
-
-		auto theLine = s.parser.process(line);
-
-		cout << "Function: " << theLine->function << endl;
-		cout << "Type Of Statement: " << theLine->typeOfStatement << endl;
-		cout << "ID: " << theLine->ID << endl;
-		cout << "Params: " << theLine->params->size() << endl;
-		cout << "Error: " << (theLine->error > 0 ? "true" : "false") << endl;
-
-		delete theLine;
-	}*/
-
+int synthTest() {
 	// Set the global sample rate before creating class instances.
 	Stk::setSampleRate(44100.0);
 	Stk::showWarnings(true);
@@ -91,7 +125,7 @@ int main() {
 	s->setFrequency(880);
 	track.addSine(*s);
 
-	
+
 
 	//Playing
 	for (int i = 0; i < nFrames; i++) {
@@ -109,5 +143,33 @@ cleanup:
 	delete dac;
 	delete s;
 	return 0;
-
 }
+int synthTest2() {
+	Synth::Synth s;
+	Synth::SynthesizerStream synth;
+	Synth::SynthesizerStream otherSynth
+
+	synth.addSine(200);
+	synth.addSqrt(300);
+	otherSynth.addTrig(600);
+
+	s.getAudio().addStream(synth);
+	s.getAudio().addStream(otherSynth);
+
+	s.getAudio().startStream();
+
+	cin.get();
+
+	s.getAudio().stopStream();
+
+	return 0;
+}
+
+int main(int argc, char** argv) {
+	synthTest2();
+	//Synth::Synth synth;
+	//argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+}
+
+
+

@@ -1,62 +1,30 @@
-// rtsine.cpp STK tutorial program
 #include "SynthesizerStream.h"
 
 
 
 namespace Synth {
 
-	/*class SynthesizerStream : Stream {
-		
-
-	public:
-
-		void addSine(SineWave s) {
-			sine_waves[s_index] = s;
-			s_index++;
-		}
-
-		void addSqrt(BlitSquare b) {
-			sqrt_waves[sq_index] = b;
-			sq_index++;
-		}
-
-		void addTrig(BlitSaw b) {
-			trig_waves[t_index] = b;
-			t_index++;
-		}
-
-		float tick() {
-			float total = 0;
-			for (unsigned int i = 0; i < s_index; i++) {
-				total += sine_waves[i].tick();
-
-			}
-			for (unsigned int i = 0; i < sq_index; i++) {
-				total += sqrt_waves[i].tick();
-
-			}
-			for (unsigned int i = 0; i < t_index; i++) {
-				total += trig_waves[i].tick();
-
-			}
-			return total;
-		}
-	};*/
 
 	SynthesizerStream::SynthesizerStream() : s_index(0), sq_index(0), t_index(0) {}
 	SynthesizerStream::~SynthesizerStream() {}
 
-	void SynthesizerStream::addSine(stk::SineWave s) {
+	void SynthesizerStream::addSine(int f) {
+		stk::SineWave s;
+		s.setFrequency(f);
 		sine_waves[s_index] = s;
 		s_index++;
 	}
 
-	void SynthesizerStream::addSqrt(stk::BlitSquare b) {
+	void SynthesizerStream::addSqrt(int f) {
+		stk::BlitSquare b;
+		b.setFrequency(f);
 		sqrt_waves[sq_index] = b;
 		sq_index++;
 	}
 
-	void SynthesizerStream::addTrig(stk::BlitSaw b) {
+	void SynthesizerStream::addTrig(int f) {
+		stk::BlitSaw b;
+		b.setFrequency(f);
 		trig_waves[t_index] = b;
 		t_index++;
 	}
@@ -76,6 +44,7 @@ namespace Synth {
 
 		}
 		return total / (s_index + sq_index + t_index);
+		//TODO check div 0
 	}
 
 };

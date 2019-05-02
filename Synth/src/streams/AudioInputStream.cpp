@@ -1,8 +1,9 @@
 #include "AudioInputStream.h"
 
 namespace Synth {
-	AudioInputStream::AudioInputStream()
+	AudioInputStream::AudioInputStream():voice(0)
 	{
+		
 	}
 
 
@@ -10,7 +11,17 @@ namespace Synth {
 	{
 	}
 
+	void AudioInputStream::startRTAudio() {
+		voice =  stk::RtWvOut(1);
+	}
+
+	void AudioInputStream::stopRTAudio() {
+		voice = stk::RtWvOut(1);
+		voice.stop();
+		voice = 0;
+	}
+
 	float AudioInputStream::tick() {
-		return 0.0;
+		return voice.tick();
 	}
 }

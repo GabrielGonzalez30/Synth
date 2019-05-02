@@ -5,6 +5,7 @@ namespace Synth {
 	{
 	public:
 		virtual float tick();
+
 	};
 }
 
