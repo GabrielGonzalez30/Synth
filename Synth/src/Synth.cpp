@@ -32,7 +32,8 @@ namespace Synth {
 
 		void TerminalInterpreter() {
 			cout << "Welcome to Synth!" << endl;
-			while (1) { //aqui algo debe de haber por si hay un fatal error
+			int error = 0;
+			while (error == 0) { //aqui algo debe de haber por si hay un fatal error
 				cout << ">>";
 
 				//get the next line
@@ -43,7 +44,7 @@ namespace Synth {
 				ParsedResult* pr = parser.process(line);
 
 				//execute the line
-				int error = evaluate(pr);
+				error = evaluate(pr);
 				if (error > 0) {
 					handleError(error);
 				}
@@ -53,8 +54,8 @@ namespace Synth {
 			}
 		}
 
-		void FileInterpreter(int argCounter, char** arguments) {
-			std::ifstream infile(arguments[0]);
+		void FileInterpreter(int argCounter, char* argument) {
+			std::ifstream infile(argument);
 			std:string line;
 			ParsedResult* pr;
 			int error;
@@ -65,6 +66,7 @@ namespace Synth {
 					handleError(error);
 				}
 			}
+			infile.close();
 		}
 
 		//methods
@@ -223,7 +225,9 @@ namespace Synth {
 
 int main(int argc, char** argv) {
 	Synth::Synth synth;
-	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv);
+	argc == 1 ? synth.TerminalInterpreter() : synth.FileInterpreter(argc, argv[1]);
+	//char path[] = "C:\\Users\\Owrn\\Documents\\gitRepos\\PL_Project\\test.syn";
+	//synth.FileInterpreter(0, path);
 }
 
 

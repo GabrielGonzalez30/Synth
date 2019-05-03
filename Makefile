@@ -3,13 +3,14 @@ CC      =   g++
 CFLAGS  =  -Ilib/STK/src 
 CFLAGS  += -Ilib/lexertk
 CFLAGS  +=  -framework CoreAudio -framework CoreFoundation
-CFLAGS  += -std=c++14 -Wall
+CFLAGS  += -std=c++14
 DEFS    =  -DHAVE_GETTIMEOFDAY -D__MACOSX_CORE__
 DEFS    += -D__LITTLE_ENDIAN__
 LIBS    =  -L./lib/STK/src -lstk
 
 SRCFOLDER = Synth/src
-OBJFOLDER = Synth/obj
+OBJFOLDER = obj
+BINFOLDER = bin
 
 STRUCTURE := $(shell find $(SRCFOLDER) -type d) 
 
@@ -21,15 +22,17 @@ HDRFILES := $(filter %.h,$(CODEFILES))
 OBJFILES := $(subst $(SRCFOLDER),$(OBJFOLDER),$(SRCFILES:%.cpp=%.o))
 
 compile: $(OBJFILES)
-	$(CC) $(OBJFILES) -o $(SYNTH) $(LIBS) $(CFLAGS)
+	$(CC) $(OBJFILES) -o $(BINFOLDER)/$(SYNTH) $(LIBS) $(CFLAGS)
 
 $(OBJFOLDER)/%.o: $(addprefix $(SRCFOLDER)/,%.cpp %.h) makefolders
 	$(CC) -c $< -o $@ $(CFLAGS) $(DEFS) $(LIBS)
 
 makefolders:
-	mkdir $(OBJFOLDER)
-	mkdir $(OBJFOLDER)/lexer
-	mkdir $(OBJFOLDER)/streams
+	if [ ! -d "./$(OBJFOLDER)" ]; then \
+		mkdir $(OBJFOLDER); \
+		mkdir $(OBJFOLDER)/lexer; \
+		mkdir $(OBJFOLDER)/streams; \
+	fi
 
 clean:
 	-rm -r $(OBJFOLDER)
